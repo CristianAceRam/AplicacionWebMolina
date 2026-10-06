@@ -25,3 +25,4 @@ node_modules/
 
 # Alembic
 backend/alembic/versions/*.pyc
+".claude/settings.local.json" 
