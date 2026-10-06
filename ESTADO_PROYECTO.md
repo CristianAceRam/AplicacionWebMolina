@@ -83,7 +83,7 @@ Al desplegar el tope de 300 min, el `CheckConstraint` nuevo (`≤300 AND mod 30`
 ---
 
 ## Cuentas admin
-- `admin@rmolinastyle.com` y `peluquero@rmolinastyle.com`, ambas funcionando. (El login del peluquero falló al principio: era un **typo de un carácter** en la contraseña, no un problema de seed. Resuelto.)
+- `admin@tudominio.com` y `peluquero@tudominio.com`, ambas funcionando. (El login del peluquero falló al principio: era un **typo de un carácter** en la contraseña, no un problema de seed. Resuelto.)
 - La cuenta de cliente registrada en pruebas es la **cuenta personal de Cristian** para pedir cita → NO se borra.
 
 ---
@@ -101,7 +101,7 @@ Al desplegar el tope de 300 min, el `CheckConstraint` nuevo (`≤300 AND mod 30`
 
 ---
 
-## Aprendizajes clave (para AceitunoDev)
+## Aprendizajes clave
 
 - **Centralizar constantes** (`FRANJA_MINUTOS`, `DURACION_MAX_MINUTOS`, `DIAS_MAX_RESERVA`) y **modelos extensibles** (`ExcepcionFecha.tipo`) absorbe el cambio de requisitos del cliente con poco esfuerzo.
 - **Zona horaria coherente** (Europe/Madrid) e IDÉNTICA en todos los endpoints de fecha/hora. Tener tests que cubran "hoy".
