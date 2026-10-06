@@ -332,4 +332,4 @@ El paso a paso está en [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md).
 
 ---
 
-Desarrollado por **AceitunoDev**.
+Desarrollado por **Cristian Aceituno**.
