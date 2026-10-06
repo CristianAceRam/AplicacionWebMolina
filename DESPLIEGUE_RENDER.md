@@ -90,7 +90,7 @@
 
 ## Fase 7 — Puesta a punto
 
-1. Entra como admin (`admin@rmolinastyle.com` + contraseña fuerte de producción).
+1. Entra como admin (`admin@tudominio.com` + contraseña fuerte de producción).
 2. Configura **servicios** y **horario** desde el panel (incluidos tramos partidos).
 3. **Telegram:** el peluquero le da Start al bot (si no lo hizo), su `chat_id` está en las variables de producción, haces una reserva de prueba → debe llegarle el aviso.
 
