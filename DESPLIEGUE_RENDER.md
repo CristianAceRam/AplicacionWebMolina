@@ -19,7 +19,7 @@
    - Secreto JWT nuevo (o que lo autogenere Render con `generateValue`).
    - Contraseñas fuertes para los admins (distintas de local).
    - Ten a mano `TELEGRAM_BOT_TOKEN` y el `chat_id` del **peluquero**.
-5. **Correos de admin (recomendado):** usa `admin@rmolinastyle.com` y `peluquero@rmolinastyle.com` (alineados con tu dominio). Son solo identificadores de login; no necesitan ser buzones reales.
+5. **Correos de admin (recomendado):** usa `admin@tudominio.com` y `peluquero@tudominio.com` (alineados con tu dominio). Son solo identificadores de login; no necesitan ser buzones reales.
 6. Ten registrado y a tu nombre el dominio **`rmolinastyle.com`**. Crea cuenta en Render y **conecta tu repo de GitHub**.
 
 ---
