@@ -101,7 +101,7 @@ Al desplegar el tope de 300 min, el `CheckConstraint` nuevo (`≤300 AND mod 30`
 
 ---
 
-## Aprendizajes clave (para AceitunoDev)
+## Aprendizajes clave
 
 - **Centralizar constantes** (`FRANJA_MINUTOS`, `DURACION_MAX_MINUTOS`, `DIAS_MAX_RESERVA`) y **modelos extensibles** (`ExcepcionFecha.tipo`) absorbe el cambio de requisitos del cliente con poco esfuerzo.
 - **Zona horaria coherente** (Europe/Madrid) e IDÉNTICA en todos los endpoints de fecha/hora. Tener tests que cubran "hoy".
