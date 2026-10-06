@@ -83,7 +83,7 @@ Al desplegar el tope de 300 min, el `CheckConstraint` nuevo (`≤300 AND mod 30`
 ---
 
 ## Cuentas admin
-- `admin@rmolinastyle.com` y `peluquero@rmolinastyle.com`, ambas funcionando. (El login del peluquero falló al principio: era un **typo de un carácter** en la contraseña, no un problema de seed. Resuelto.)
+- `admin@tudominio.com` y `peluquero@tudominio.com`, ambas funcionando. (El login del peluquero falló al principio: era un **typo de un carácter** en la contraseña, no un problema de seed. Resuelto.)
 - La cuenta de cliente registrada en pruebas es la **cuenta personal de Cristian** para pedir cita → NO se borra.
 
 ---
