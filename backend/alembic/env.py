@@ -16,8 +16,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Inyectar la URL de la BD desde la variable de entorno
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Inyectar la URL de la BD desde la variable de entorno.
+# configparser interpreta '%' como interpolación: se escapa para que una
+# contraseña con caracteres URL-encoded (p. ej. %40) no rompa la migración.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 

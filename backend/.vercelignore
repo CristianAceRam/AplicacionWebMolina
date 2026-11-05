@@ -1,0 +1,9 @@
+# Nunca subir secretos ni entornos locales en un deploy (p. ej. con la CLI de Vercel)
+.env
+*.env.local
+venv/
+.venv/
+# No hacen falta en la función
+tests/
+.pytest_cache/
+__pycache__/

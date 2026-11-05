@@ -1,11 +1,11 @@
-"""Tests del script de recordatorio diario."""
+"""Tests de la tarea de recordatorio diario (app/tareas/recordatorio.py)."""
 from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from app.models import Cita, EstadoCita, Rol, Usuario
 from app.security import hash_password
-from scripts.recordatorio_diario import enviar_recordatorio
+from app.tareas.recordatorio import enviar_recordatorio
 
 _MADRID = ZoneInfo("Europe/Madrid")
 
@@ -55,7 +55,7 @@ def test_con_citas_activas_mensaje_correcto(db_session, servicio_corte):
     _crear_cita(db_session, c1.id, servicio_corte.id, manana, time(10, 0))
     _crear_cita(db_session, c2.id, servicio_corte.id, manana, time(11, 0))
 
-    with patch("scripts.recordatorio_diario.enviar_aviso_peluquero") as mock_fn:
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero") as mock_fn:
         enviar_recordatorio(db=db_session, _manana=manana)
 
     mock_fn.assert_called_once()
@@ -71,7 +71,7 @@ def test_sin_citas_mensaje_indicarlo(db_session):
     """Sin citas → mensaje contiene 'no tienes citas' y la fecha DD/MM."""
     manana = date.today() + timedelta(days=1)
 
-    with patch("scripts.recordatorio_diario.enviar_aviso_peluquero") as mock_fn:
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero") as mock_fn:
         enviar_recordatorio(db=db_session, _manana=manana)
 
     mock_fn.assert_called_once()
@@ -89,7 +89,7 @@ def test_citas_canceladas_no_aparecen(db_session, servicio_corte):
         estado=EstadoCita.cancelada,
     )
 
-    with patch("scripts.recordatorio_diario.enviar_aviso_peluquero") as mock_fn:
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero") as mock_fn:
         enviar_recordatorio(db=db_session, _manana=manana)
 
     mensaje = mock_fn.call_args[0][0]
@@ -98,9 +98,9 @@ def test_citas_canceladas_no_aparecen(db_session, servicio_corte):
 
 def test_calculo_manana_en_madrid(db_session):
     """'Mañana' se calcula en Europe/Madrid: 22:00 del 30/06 → mensaje contiene '01/07'."""
-    with patch("scripts.recordatorio_diario.datetime") as mock_dt:
+    with patch("app.tareas.recordatorio.datetime") as mock_dt:
         mock_dt.now.return_value = datetime(2026, 6, 30, 22, 0, tzinfo=_MADRID)
-        with patch("scripts.recordatorio_diario.enviar_aviso_peluquero") as mock_fn:
+        with patch("app.tareas.recordatorio.enviar_aviso_peluquero") as mock_fn:
             enviar_recordatorio(db=db_session)
 
     assert mock_fn.call_count == 1
@@ -114,7 +114,23 @@ def test_exactamente_un_mensaje(db_session, servicio_corte):
         c = _crear_cliente(db_session, str(i))
         _crear_cita(db_session, c.id, servicio_corte.id, manana, time(9 + i, 0))
 
-    with patch("scripts.recordatorio_diario.enviar_aviso_peluquero") as mock_fn:
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero") as mock_fn:
         enviar_recordatorio(db=db_session, _manana=manana)
 
     assert mock_fn.call_count == 1
+
+
+def test_devuelve_resultado_del_envio(db_session):
+    """Devuelve lo que indique el envío a Telegram (True/False)."""
+    manana = date.today() + timedelta(days=1)
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero", return_value=True):
+        assert enviar_recordatorio(db=db_session, _manana=manana) is True
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero", return_value=False):
+        assert enviar_recordatorio(db=db_session, _manana=manana) is False
+
+
+def test_script_cli_importable():
+    """El envoltorio CLI sigue exponiendo la tarea."""
+    import scripts.recordatorio_diario as cli
+    assert cli.enviar_recordatorio is enviar_recordatorio
+    assert callable(cli.main)

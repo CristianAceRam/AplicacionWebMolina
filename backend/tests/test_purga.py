@@ -1,9 +1,11 @@
-"""Tests del script de purga de citas."""
+"""Tests de la tarea de purga de citas (app/tareas/purga.py)."""
 from datetime import date, time, timedelta
+
+import pytest
 
 from app.models import Cita, EstadoCita, FranjaOcupada, Rol, Usuario
 from app.security import hash_password
-from scripts.purga_citas import purgar
+from app.tareas.purga import _fecha_limite, purgar
 
 
 def _cliente(db, email="purga@test.com"):
@@ -112,3 +114,30 @@ def test_purga_no_afecta_contador(db_session, servicio_corte):
 
     db_session.refresh(u)
     assert u.inasistencias == 3
+
+
+# ---------------------------------------------------------------------------
+# Fecha límite (aritmética de meses)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "hoy, meses, esperado",
+    [
+        (date(2026, 11, 5), 24, date(2024, 11, 5)),    # caso normal
+        (date(2028, 2, 29), 24, date(2026, 2, 28)),    # 29-feb → año no bisiesto
+        (date(2026, 3, 31), 1, date(2026, 2, 28)),     # 31 → mes de 28 días
+        (date(2026, 1, 15), 3, date(2025, 10, 15)),    # cruza de año
+        (date(2026, 12, 31), 12, date(2025, 12, 31)),  # diciembre
+    ],
+)
+def test_fecha_limite(hoy, meses, esperado):
+    assert _fecha_limite(retencion_meses=meses, hoy=hoy) == esperado
+
+
+def test_script_cli_importable():
+    """El envoltorio CLI sigue exponiendo la tarea y acepta --dry-run."""
+    import scripts.purga_citas as cli
+    assert cli.purgar is purgar
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--help"])
+    assert exc.value.code == 0

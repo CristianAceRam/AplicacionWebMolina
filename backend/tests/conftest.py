@@ -79,6 +79,21 @@ def client(db_session):
 
 
 @pytest.fixture(autouse=True)
+def aislar_settings(monkeypatch):
+    """
+    Aísla los tests del .env local: nunca se llama a Telegram de verdad,
+    los /cron/* parten desactivados y la IP se toma como en local.
+    Cada test puede activar lo que necesite con monkeypatch.
+    """
+    from app.config import settings
+    monkeypatch.setattr(settings, "telegram_bot_token", None)
+    monkeypatch.setattr(settings, "telegram_chat_id", None)
+    monkeypatch.setattr(settings, "cron_secret", None)
+    monkeypatch.setattr(settings, "vercel", False)
+    monkeypatch.setattr(settings, "render", False)
+
+
+@pytest.fixture(autouse=True)
 def reset_rate_limiter():
     """Reinicia el almacenamiento del rate limiter antes de cada test para evitar falsos 429."""
     from app.rate_limit import limiter

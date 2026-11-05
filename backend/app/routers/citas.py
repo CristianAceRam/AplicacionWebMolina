@@ -1,7 +1,8 @@
+import logging
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,8 @@ from app.schemas import CitaCreate, CitaRead, CitaReprogramar
 from app.security import decode_access_token
 
 router = APIRouter(tags=["citas"])
+
+logger = logging.getLogger(__name__)
 
 _MADRID = ZoneInfo("Europe/Madrid")
 
@@ -91,6 +94,21 @@ def _key_usuario(request: Request) -> str:
     return get_real_ip(request)
 
 
+def _avisar_peluquero(mensaje: str) -> None:
+    """
+    Aviso por Telegram de forma SÍNCRONA, después del commit.
+    En serverless, lo que se ejecuta tras enviar la respuesta (BackgroundTasks)
+    puede no completarse. Un fallo aquí nunca rompe la operación ya confirmada.
+    """
+    try:
+        enviar_aviso_peluquero(mensaje)
+    except Exception as exc:
+        logger.warning(
+            "Aviso Telegram no enviado (%s) — la operación ya está confirmada.",
+            type(exc).__name__,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Rutas — literales antes que rutas con parámetro (CLAUDE.md)
 # ---------------------------------------------------------------------------
@@ -127,7 +145,6 @@ def mis_citas(
 @limiter.limit("50/day", key_func=_key_usuario)
 def crear_cita(
     request: Request,  # requerido por slowapi
-    background_tasks: BackgroundTasks,
     datos: CitaCreate,
     usuario: Usuario = Depends(get_usuario_actual),
     db: Session = Depends(get_db),
@@ -181,23 +198,24 @@ def crear_cita(
         db.commit()
         db.refresh(cita)
 
-        fecha_str = cita.fecha.strftime("%d/%m/%Y")
-        hora_str  = cita.hora_inicio.strftime("%H:%M")
-        mensaje = (
-            f"Nueva reserva\n"
-            f"Cliente: {usuario.nombre_completo} | {usuario.telefono}\n"
-            f"Servicio: {servicio.nombre}\n"
-            f"Fecha: {fecha_str} a las {hora_str}"
-        )
-        background_tasks.add_task(enviar_aviso_peluquero, mensaje)
-        return cita
-
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Una o más franjas ya están ocupadas. Recarga la disponibilidad e inténtalo de nuevo.",
         )
+
+    # 7. Aviso al peluquero (síncrono, tras el commit)
+    fecha_str = cita.fecha.strftime("%d/%m/%Y")
+    hora_str  = cita.hora_inicio.strftime("%H:%M")
+    mensaje = (
+        f"Nueva reserva\n"
+        f"Cliente: {usuario.nombre_completo} | {usuario.telefono}\n"
+        f"Servicio: {servicio.nombre}\n"
+        f"Fecha: {fecha_str} a las {hora_str}"
+    )
+    _avisar_peluquero(mensaje)
+    return cita
 
 
 @router.get("/citas/{cita_id}", response_model=CitaRead)
@@ -221,7 +239,6 @@ def obtener_cita(
 @router.patch("/citas/{cita_id}/cancelar", response_model=CitaRead)
 def cancelar_cita(
     cita_id: int,
-    background_tasks: BackgroundTasks,
     usuario: Usuario = Depends(get_usuario_actual),
     db: Session = Depends(get_db),
 ):
@@ -274,7 +291,7 @@ def cancelar_cita(
             f"Servicio: {nombre_servicio}\n"
             f"Fecha: {fecha_str} a las {hora_str}"
         )
-        background_tasks.add_task(enviar_aviso_peluquero, mensaje)
+        _avisar_peluquero(mensaje)
 
     return cita
 
@@ -282,7 +299,6 @@ def cancelar_cita(
 @router.patch("/citas/{cita_id}/reprogramar", response_model=CitaRead)
 def reprogramar_cita(
     cita_id: int,
-    background_tasks: BackgroundTasks,
     datos: CitaReprogramar,
     usuario: Usuario = Depends(get_usuario_actual),
     db: Session = Depends(get_db),
@@ -378,7 +394,7 @@ def reprogramar_cita(
         f"De: {fecha_ant.strftime('%d/%m/%Y')} a las {hora_ant.strftime('%H:%M')}\n"
         f"A: {datos.fecha.strftime('%d/%m/%Y')} a las {datos.hora_inicio.strftime('%H:%M')}"
     )
-    background_tasks.add_task(enviar_aviso_peluquero, mensaje)
+    _avisar_peluquero(mensaje)
     return cita
 
 

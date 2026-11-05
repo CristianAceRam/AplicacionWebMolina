@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.rate_limit import limiter
-from app.routers import auth, citas, disponibilidad, excepciones, horario, servicios, usuarios
+from app.routers import auth, citas, cron, disponibilidad, excepciones, horario, servicios, usuarios
 
 _STATIC_SWAGGER = Path(__file__).parent / "static" / "swagger-ui"
 _STATIC_REDOC   = Path(__file__).parent / "static" / "redoc"
@@ -21,7 +21,7 @@ _STATIC_REDOC   = Path(__file__).parent / "static" / "redoc"
 # ---------------------------------------------------------------------------
 
 class ProxySchemeMiddleware(BaseHTTPMiddleware):
-    """Corrige request.scope['scheme'] cuando la app corre tras el proxy de Render."""
+    """Corrige request.scope['scheme'] cuando la app corre tras un proxy (Vercel / Render)."""
 
     async def dispatch(self, request: Request, call_next):
         if request.headers.get("X-Forwarded-Proto") == "https":
@@ -89,6 +89,7 @@ app.include_router(horario.router)
 app.include_router(disponibilidad.router)
 app.include_router(citas.router)
 app.include_router(excepciones.router)
+app.include_router(cron.router)        # /cron/* — Vercel Cron, protegido con CRON_SECRET
 
 # ---------------------------------------------------------------------------
 # Documentación interactiva local (solo en desarrollo)

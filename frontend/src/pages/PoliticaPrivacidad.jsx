@@ -47,8 +47,15 @@ export default function PoliticaPrivacidad() {
       <p>Tus datos pueden ser accedidos o procesados por los siguientes encargados:</p>
       <ul>
         <li>
-          <strong>Render Services, Inc.</strong> — proveedor de alojamiento (servidores en
-          Frankfurt, Unión Europea). Los datos permanecen en la UE.
+          <strong>Vercel Inc.</strong> — proveedor de alojamiento de la web y de ejecución del
+          servidor de la aplicación (funciones ejecutadas en Frankfurt, Unión Europea). Al ser una
+          empresa con sede en EE. UU., puede implicar una <strong>transferencia internacional de
+          datos</strong>; base legal aplicable: [indicar mecanismo de transferencia, p. ej. Marco de
+          Privacidad de Datos UE-EE. UU. o cláusulas contractuales tipo].
+        </li>
+        <li>
+          <strong>Neon</strong> — proveedor de la base de datos (servidores en Frankfurt, Unión
+          Europea). [Indicar razón social del proveedor y mecanismo de transferencia, si aplica.]
         </li>
         <li>
           <strong>Cloudflare, Inc.</strong> — proveedor de red de distribución de contenido (CDN)
@@ -68,6 +75,13 @@ export default function PoliticaPrivacidad() {
         El uso de Telegram para el envío de notificaciones al peluquero implica la transferencia de
         datos (nombre del cliente, teléfono, fecha y hora de la cita) a servidores fuera del Espacio
         Económico Europeo. La base legal de esta transferencia es: [indicar mecanismo aplicable].
+      </p>
+      <p>
+        El alojamiento de la aplicación lo presta Vercel Inc., empresa con sede en EE. UU. Aunque
+        el servidor de la aplicación se ejecuta en Frankfurt (UE), el proveedor puede acceder a
+        los datos desde fuera del Espacio Económico Europeo. La base legal de esta transferencia
+        es: [indicar mecanismo aplicable, p. ej. Marco de Privacidad de Datos UE-EE. UU. o
+        cláusulas contractuales tipo].
       </p>
 
       <h2>Plazo de conservación</h2>
