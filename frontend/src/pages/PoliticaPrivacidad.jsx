@@ -20,7 +20,11 @@ export default function PoliticaPrivacidad() {
         <li>Nombre completo</li>
         <li>Dirección de correo electrónico</li>
         <li>Número de teléfono</li>
-        <li>Historial de citas (servicios, fechas y horas)</li>
+        <li>
+          Usuario de Instagram — <strong>obligatorio para reservar</strong>. Se guarda en tu perfil
+          y puedes cambiarlo en «Mi cuenta».
+        </li>
+        <li>Historial de citas (servicios, fechas, horas y ciudad de cada cita: Alcalá la Real o Granada)</li>
         <li>Fecha y versión de aceptación de esta política</li>
       </ul>
 
@@ -29,6 +33,12 @@ export default function PoliticaPrivacidad() {
         <li>Gestionar el registro de usuarios y el acceso al servicio de reservas.</li>
         <li>Gestionar, confirmar y recordar las citas reservadas.</li>
         <li>Contactar al cliente en caso de cambios o incidencias en su cita.</li>
+        <li>
+          Usuario de Instagram: canal de contacto del peluquero con el cliente sobre sus citas (en
+          Granada, para concretar el lugar de la cita, ya que no hay local fijo).
+          [Justificación de pedirlo obligatorio teniendo ya el teléfono (principio de minimización),
+          que asume el titular.]
+        </li>
       </ul>
 
       <h2>Base legal</h2>
@@ -82,6 +92,11 @@ export default function PoliticaPrivacidad() {
         los datos desde fuera del Espacio Económico Europeo. La base legal de esta transferencia
         es: [indicar mecanismo aplicable, p. ej. Marco de Privacidad de Datos UE-EE. UU. o
         cláusulas contractuales tipo].
+      </p>
+      <p>
+        Cuando el peluquero contacta contigo por Instagram, la comunicación la presta Meta
+        Platforms, que puede tratar los datos fuera del Espacio Económico Europeo. [Indicar el
+        mecanismo de transferencia aplicable y el papel de Meta en este tratamiento.]
       </p>
 
       <h2>Plazo de conservación</h2>
