@@ -11,6 +11,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 ## Situación actual (8 de noviembre de 2026)
  
 - **Producción en Vercel Hobby + Neon Free desde el 8 de noviembre de 2026** (corte hecho un domingo, con la peluquería cerrada). Verificado: HTTPS, `www` → apex con 308, login de admin y de cliente, datos migrados, reservar/cancelar, recarga sin 404, cabeceras de seguridad, CSP sin errores, `/health` 200, `/cron/recordatorio` sin cabecera → 401.
+- **Fase E (ciudad de la cita + Instagram obligatorio) en producción desde el 8 de noviembre de 2026**: migración `e5f6a1b2c3d4` aplicada a mano en Neon (URL directa) antes del merge — 230 citas rellenadas con `alcala`, ninguna sin ciudad, `CHECK` creado — y merge fast-forward de `feature/ubicacion-instagram` a `main` (`2212f88`). Ver "Despliegue de la Fase E" más abajo.
 - **Pendiente de confirmar**:
   - Que a Molina le llegaron los avisos de Telegram de la reserva y cancelación de prueba del corte. Si no: revisar los logs del backend en Vercel y que `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` sean idénticos a los de Render (sin espacios), y redeploy.
   - Que el resumen diario de la noche del 8 de noviembre (21:00–21:59) le llega → el cron de Vercel funciona.
@@ -20,7 +21,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Las cuentas de Vercel y Neon son de Cristian** (misma identidad que su GitHub). Si Vercel actuara por el uso comercial en Hobby, afectaría a la cuenta personal de Cristian y a sus otros proyectos.
 ### Infraestructura de producción
  
-- **Neon**: proyecto `rm-production`, AWS Europe Central 1 (Frankfurt), **Postgres 18** (misma versión que tenía Render). URLs pooled y directa en el gestor de contraseñas. Alembic en `d4e5f6a1b2c3 (head)`.
+- **Neon**: proyecto `rm-production`, AWS Europe Central 1 (Frankfurt), **Postgres 18** (misma versión que tenía Render). Ojo con los nombres: el **proyecto** se llama `rm-production`, pero la **base de datos** dentro de él es `rm_postgres` (rol `rm_postgres_owner`); es la misma BD de producción. URLs pooled y directa en el gestor de contraseñas. Alembic en **`e5f6a1b2c3d4 (head)`** (Fase E). `citas.ubicacion` tiene un `DEFAULT 'alcala'` **temporal** (ver Pendientes).
 - **Vercel backend**: proyecto `aplicacion-web-molina` (raíz `backend/`), dominio `api.rmolinastyle.com` (también responde en `aplicacion-web-molina.vercel.app`). Python 3.14. Variables (solo Production): `DATABASE_URL` (pooled), `DB_NULLPOOL=true`, `SECRET_KEY` (la de Render), `ENVIRONMENT=production`, `ALLOWED_ORIGINS=["https://rmolinastyle.com","https://www.rmolinastyle.com"]` (**array JSON**: el campo es `list[str]` en pydantic-settings), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET`.
 - **Vercel frontend**: proyecto `aplicacion-web-molina-frontend` (raíz `frontend/`), dominios `rmolinastyle.com` (principal) y `www.rmolinastyle.com` (308 al apex). `VITE_API_URL=https://api.rmolinastyle.com`, de tipo **Config** (no sensible: todo lo que lleva `VITE_` acaba en el JS del navegador; nunca poner secretos ahí). `connect-src` de la CSP solo con `https://api.rmolinastyle.com`.
 - **Cloudflare**: los 3 registros (`rmolinastyle.com`, `www`, `api`) apuntan a Vercel, en "DNS only" (nube gris; con proxy naranja el rate limiting de `/login` vería la IP de Cloudflare). Sin registros CAA.
@@ -39,6 +40,12 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - En PowerShell, las URLs con contraseña se meten con `Read-Host` (pegándolas en el aviso, sin comillas) para que no queden en el historial y el `&` no dé problemas.
 - No usar el "agent prompt" que ofrece Neon al crear el proyecto: escribe en `.env` y toca el código.
 - Las variables sensibles de Vercel no se pueden pasar a Config: hay que borrarlas y crearlas de nuevo.
+### Despliegue de la Fase E (8 nov 2026)
+
+- Orden seguido: migración en Neon → verificación (`citas.ubicacion` NOT NULL con default, `usuarios.instagram` nullable, 230/230 citas en `alcala`, `CHECK ck_cita_ubicacion`) → merge fast-forward a `main` y push → Vercel despliega los dos proyectos.
+- La migración es compatible con el código anterior (sus `INSERT` no envían `ubicacion` y la BD pone `'alcala'`), por eso se pudo aplicar antes del merge.
+- Ventana de versiones mezcladas (1–2 min): backend nuevo + frontend viejo, o al revés, → `POST /citas` da 422 en los dos sentidos (sin datos corruptos). Una pestaña abierta antes del despliegue ve "No se pudo crear la reserva. Inténtalo de nuevo." hasta que recarga.
+- Rollback: *Instant Rollback* en Vercel (el backend anterior funciona con la BD ya migrada). La migración tiene `downgrade`, pero borra las columnas nuevas (perdería ciudades e Instagram).
 ---
  
 ## Completado
@@ -55,6 +62,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 9. Bloque legal RGPD/LOPDGDD/LSSI-CE: páginas legales con marcadores, footer, consentimiento en el registro (`consentimiento_version`/`consentimiento_fecha`), exportación y anonimización de datos, purga de citas (24 meses).
 10. Zona horaria unificada en Europe/Madrid en todos los endpoints (corrigió un bug en producción). `CheckConstraint` de duración de servicio.
 11. Migración a Vercel + Neon: `NullPool`/`prepare_threshold=None`, `/health` sin BD, Telegram síncrono tras el commit (timeout 3 s), crons como endpoints `/cron/recordatorio` y `/cron/purga` con `CRON_SECRET` (la purga se programa por primera vez), IP real desde cabeceras de Vercel para el rate limiting, `tzdata`, `backend/vercel.json` (región `fra1`, 2 crons), Python 3.14.
+12. **Fase E — ciudad de la cita + Instagram obligatorio**: enum `Ubicacion` (`alcala`/`granada`) y `NOMBRES_UBICACION` en `app/constants.py`; `Cita.ubicacion` (NOT NULL + `CHECK`) y `Usuario.instagram` (nullable); validador único de Instagram en `app/schemas.py` (normaliza sin `@` y en minúsculas; 1–30 caracteres, letras/números/`.`/`_`, sin `..` ni `.` al principio o al final) usado por `POST /citas` y `PATCH /usuarios/me`. `POST /citas` exige ciudad y, si el perfil no tiene Instagram, que llegue en el body (422 si no); el Instagram del body se guarda en el perfil **en la misma transacción** que la cita (un 409 no lo guarda). La reprogramación mantiene la ciudad. `PATCH /usuarios/me` permite cambiar el Instagram pero no vaciarlo. Exportación con Instagram y ciudad; anonimizar pone Instagram a NULL. Telegram: ciudad e Instagram (enlace) en avisos y resumen diario, texto plano sin `parse_mode` y con `link_preview_options.is_disabled` en todos los envíos. **260 tests** en verde.
 ### Frontend
 - Fase A: cimientos (axios con interceptores 401/409, AuthContext, rutas por rol).
 - Fase B: Login y Registro con estética premium negro/oro, tema claro/oscuro, fuentes self-hosted.
@@ -63,6 +71,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - Fase D: panel admin (Agenda, Servicios, Horario con tramos y días cerrados, Clientes).
 - Favicon RM completo. Monitor de uptime con BetterStack sobre `/health`.
 - Migración: `frontend/vercel.json` (rewrite SPA + cabeceras de seguridad con CSP sin `unsafe-inline`), script del tema en `public/tema-init.js`, política de privacidad con Vercel y Neon.
+- **Fase E**: `src/constants/ubicaciones.js` (ciudades, `DIRECCION_ALCALA = 'C/Camino Nuevo Nº 11'` y texto de Granada) y `src/utils/instagram.js`. Reservar: ciudad → servicio → calendario → horas → Instagram → resumen; los **servicios se ven siempre** (con duración y precio) y se pueden elegir tras escoger ciudad; cambiar de ciudad no borra lo ya elegido; Instagram precargado del perfil con texto de para qué se usa. Ciudad en Mis citas (y dirección si es Alcalá); ciudad e Instagram (enlace `noopener noreferrer`) en la agenda y Clientes; Instagram editable en Mi cuenta. Política de privacidad con Instagram (obligatorio para reservar) y ciudad de la cita.
 ---
  
 ## Limitaciones conocidas (aceptadas)
@@ -78,8 +87,10 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Borrar Render** (10–11 nov si todo va estable): Postgres primero, luego `rm-backend`, `rm-recordatorios` y `rm-frontend`. Comprobar *Billing*.
 - **Montar el `pg_dump` periódico de Neon** (frecuencia y dónde guardarlo cifrado, por decidir).
 - **Corregir `DESPLIEGUE_VERCEL.md`** en el repo: Render tenía Postgres **18** (no 16) → imagen `postgres:18`; la cuenta de Vercel es la de Cristian; suspender `rm-recordatorios` al principio del corte; `VITE_API_URL` de tipo Config. Convertirlo en documentación de la producción actual más que en runbook de migración.
-- Política de privacidad: mecanismo de transferencia de Vercel (`[…]`), lo rellena Molina o un profesional.
-- `passlib` no tiene mantenimiento: cambiar algún día por `bcrypt` directamente o por `pwdlib`.
+- Política de privacidad: mecanismo de transferencia de Vercel (`[…]`), y los nuevos marcadores de la Fase E (justificación de pedir Instagram obligatorio —minimización— y transferencia de Meta). Los rellena Molina o un profesional.
+- **Retirar el `DEFAULT 'alcala'` de `citas.ubicacion`** en una migración nueva (`ALTER COLUMN ubicacion DROP DEFAULT`), en otra rama, ahora que el código nuevo está en producción. Así una cita sin ciudad fallará en vez de quedarse en Alcalá en silencio.
+- Dependencias: FastAPI 0.115.5 / Starlette / slowapi usan `asyncio.iscoroutinefunction`, deprecado en Python 3.14 (~580 warnings en pytest; se elimina en 3.16). Fase aparte de actualización (en Starlette moderno `HTTP_422_UNPROCESSABLE_ENTITY` pasa a ser `HTTP_422_UNPROCESSABLE_CONTENT`).
+- `README.md` dice que `GET /servicios` es público, pero requiere token (el código es correcto; corregir el README).
 - 17 errores previos de `npm run lint`.
 - Probar `python scripts/purga_citas.py --dry-run` con Docker levantado.
 ---
@@ -88,21 +99,17 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
  
 Se pueden empezar ya en su rama; **el merge a `main` (= despliegue a producción) cuando Vercel lleve unos días estable**. Todo está decidido con Molina; el detalle técnico está en `CLAUDE.md`. Una fase por rama y por chat. Las migraciones Alembic se aplican a mano en Neon (URL directa) **antes** del merge.
  
-### Fase E — Ciudad de la cita + Instagram obligatorio (`feature/ubicacion-instagram`)
-- Elegir ciudad al reservar: **Alcalá la Real** (se muestra la dirección del local) o **Granada** (sin dirección fija: el peluquero contacta por Instagram). Agenda, horario, servicios y precios únicos para las dos.
-- **Instagram obligatorio en todas las reservas** (decisión y riesgo de Molina). Se guarda en el perfil (`Usuario.instagram`), se precarga en la siguiente reserva y se edita en Mi cuenta. Visible en la agenda y en Clientes.
-- Ciudad guardada en la cita (`Cita.ubicacion`), visible en Mis citas, la agenda, los avisos de Telegram y el resumen diario. La reprogramación mantiene la ciudad.
-- Migración Alembic: `usuario.instagram` (nullable) + `cita.ubicacion` (NOT NULL, backfill `'alcala'`). Se aplica a mano en Neon antes de desplegar.
-- RGPD: Instagram en la exportación, a NULL al anonimizar, y en la política de privacidad como obligatorio para reservar.
+### ~~Fase E — Ciudad de la cita + Instagram obligatorio~~ ✅ en producción (8 nov 2026, ver "Completado")
 ### Fase F — Recordatorios a clientes por WhatsApp (`feature/recordatorio-whatsapp`)
 - Gratis y semiautomático: en el resumen diario de Telegram, cada cita lleva un enlace `wa.me` con el mensaje de recordatorio ya escrito. Molina lo pulsa y envía desde su WhatsApp. La app no envía nada a los clientes.
+- El mensaje lleva `DIRECCION_ALCALA`, que hoy solo está en el frontend (`src/constants/ubicaciones.js`): **moverla al backend** (p. ej. `app/constants.py` + un endpoint público sin BD que la sirva al frontend) para que siga siendo una sola constante.
 - A tener en cuenta: el resumen llega entre las 21:00 y las 22:59 según la época del año. Si a Molina le parece tarde para escribir a clientes, se adelanta el cron (decisión suya).
 ### Fase G — Email "¡Te echamos de menos!" (`feature/email-reactivacion`)
 - Email a clientes con 28 días sin cita, un solo email por periodo de inactividad. Gratis con **Brevo** (300 emails/día, empresa de la UE).
 - Es comunicación comercial: **solo a quien dé su consentimiento** (checkbox aparte y no premarcado en el registro + interruptor en Mi cuenta). Las cuentas existentes no reciben nada hasta que lo activen. Baja en un clic en cada email.
 - Necesita: cuenta de Brevo, autenticar el dominio (SPF/DKIM/DMARC en Cloudflare; ahora mismo el dominio solo tiene los 3 registros de la web), un cron diario `/cron/reactivacion` y 3 campos nuevos en `Usuario`.
 ### Datos que tiene que dar Molina
-- Dirección exacta del local de Alcalá la Real (Fase E).
+- ~~Dirección exacta del local de Alcalá la Real (Fase E)~~ → dada: C/Camino Nuevo Nº 11.
 - Remitente y dirección de respuesta del email, y si quiere retocar el texto (Fase G).
 - Rellenar los marcadores `[…]` de las páginas legales, incluido el mecanismo de transferencia de Vercel.
 ### Futuro próximo — Reserva como invitado (sin diseñar)
@@ -114,15 +121,18 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
  
 **Auth:**
 - `POST /login` → `{ access_token, token_type: "bearer" }`.
-- `GET /usuarios/me` → `{ id, email, telefono, nombre_completo, rol }` (Fase E añadirá `instagram`).
+- `GET /usuarios/me` → `{ id, email, telefono, nombre_completo, rol, instagram }` (`instagram`: `string | null`). Mismo esquema en la respuesta de `PATCH /usuarios/me` y `POST /registro`.
+- `PATCH /usuarios/me` → body con al menos uno de `nombre_completo`, `telefono`, `instagram` (`instagram: null` → 422: se cambia, no se vacía). Cualquier otro campo → 422.
+- `GET /usuarios`, `GET /usuarios/{id}`, `PATCH /usuarios/{id}/bloquear|desbloquear` (admin) → incluyen `instagram`.
+- `GET /usuarios/me/datos` → `perfil.instagram` y `citas[].ubicacion`. `DELETE /usuarios/me` pone `instagram` a NULL.
 - JWT claims: `sub`, `rol`, `exp`. El frontend no decodifica el JWT.
 - `POST /registro` → 201 + UsuarioRead (sin token). Email duplicado → 409. Password mínimo 8.
 **Citas/servicios:**
 - `GET /servicios` → solo activos; `precio` como string decimal ("25.50"). `?incluir_inactivos=true` solo admin. Requiere token.
 - `GET /disponibilidad?fecha=YYYY-MM-DD&servicio_id=int` → `{fecha, servicio_id, horas_disponibles: ["HH:MM", ...]}`.
-- `POST /citas` → body `{servicio_id, fecha, hora_inicio}` (Fase E añadirá `ubicacion` obligatoria e `instagram`, obligatorio si el perfil aún no lo tiene). Errores: 403, 409, 422.
-- `GET /citas/mias` → `[{id, cliente_id, servicio_id, fecha, hora_inicio, hora_fin, estado}]` (solo `servicio_id`: cruzar con `/servicios`).
-- `PATCH /citas/{id}/cancelar`, `PATCH /citas/{id}/reprogramar`, `PATCH /citas/{id}/no-asistida`.
+- `POST /citas` → body `{servicio_id, fecha, hora_inicio, ubicacion, instagram?}`. `ubicacion` (`"alcala"` | `"granada"`) obligatoria; `instagram` obligatorio si el perfil aún no lo tiene (si llega, se guarda en el perfil). Errores: 403, 409, 422 (también si falta ciudad o Instagram).
+- `GET /citas/mias` → `[{id, cliente_id, servicio_id, fecha, hora_inicio, hora_fin, estado, ubicacion}]` (solo `servicio_id`: cruzar con `/servicios`). Todas las respuestas de cita (`CitaRead`) incluyen `ubicacion`.
+- `PATCH /citas/{id}/cancelar`, `PATCH /citas/{id}/reprogramar` (body `{fecha, hora_inicio}`; `ubicacion` → 422, la cita mantiene su ciudad), `PATCH /citas/{id}/no-asistida`.
 - `GET /citas?fecha=YYYY-MM-DD` (admin, agenda del día).
 - `GET /horario` → `[{id, dia_semana (0=lunes…6=domingo), hora_apertura, hora_cierre}]`.
 - **Zona horaria: Europe/Madrid.** En el frontend, fechas con componentes locales del `Date`, nunca `toISOString()`.
@@ -141,12 +151,20 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
 ## Herramienta de desarrollo — compartir en local
  
 Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudflared tunnel --url http://localhost:5173` (si da errores QUIC: `--protocol http2` o desactivar la VPN). Solo para demos cortas; parar el túnel al terminar.
+
+## Base de datos local (desarrollo)
+
+- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, `postgres:16`, `localhost:5432`, BD `peluqueria`). En la Fase E se migró a `e5f6a1b2c3d4` y se sembraron los 2 admins con `seed.py` (servicios, horario y clientes se crean desde la web).
+- ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio está **parado**; si vuelve a arrancar, `localhost:5432` dejaría de ser Docker. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "PostgreSQL 16 … Debian") y `alembic current`.
+- Esa BD de Windows se migró por error a `e5f6a1b2c3d4` el 8 nov (antes estaba en `c70da527d6e9`; solo cambios de esquema, sin pérdida de datos). No se usa.
+- Para pruebas locales, vaciar `TELEGRAM_CHAT_ID` (o poner uno propio) para no avisar a Molina con reservas de prueba.
  
 ---
  
 ## Siguiente paso
  
-1. Confirmar con Molina los avisos de Telegram del corte y el resumen de la noche del 8 de noviembre.
-2. **Fase E** (`feature/ubicacion-instagram`) en un chat nuevo, con su prompt de Plan Mode. Merge a `main` cuando Vercel lleve unos días estable (y tras aplicar la migración en Neon).
-3. Hacia el 10–11 de noviembre: borrar Render.
-4. Después: Fase F → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, `pg_dump` periódico).
+1. Confirmar con Molina los avisos de Telegram del corte y el resumen de la noche del 8 de noviembre (ya con ciudad e Instagram en cada línea).
+2. Verificar en producción la Fase E: reserva de prueba en Alcalá la Real y en Granada (recargando antes la página), ciudad en Mis citas y en la agenda, aviso de Telegram con ciudad e Instagram sin vista previa del enlace; cancelar las citas de prueba.
+3. Rama aparte: retirar el `DEFAULT 'alcala'` de `citas.ubicacion` (migración nueva, aplicar en Neon).
+4. Hacia el 10–11 de noviembre: borrar Render.
+5. Después: Fase F (mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, `pg_dump` periódico, README, dependencias).
