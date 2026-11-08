@@ -220,27 +220,32 @@ export default function TabReservar({ servicios, diasAbiertos, fechasCerradas = 
         </div>
       </section>
 
-      {/* ── Sección 2: elegir servicio ───────────────────────────────────── */}
-      {ubicacion && (
-        <section className={styles.seccion}>
-          <h2 className={styles.seccionTitulo}>Elige un servicio</h2>
-          <div className={styles.serviciosGrid}>
-            {servicios.map(s => (
-              <button
-                key={s.id}
-                type="button"
-                className={`${styles.servicioCard} ${servicio?.id === s.id ? styles.servicioSeleccionado : ''}`}
-                onClick={() => handleServicio(s)}
-              >
-                <span className={styles.servicioNombre}>{s.nombre}</span>
-                <span className={styles.servicioMeta}>
-                  {formatDuracion(s.duracion_minutos)} · {formatPrecio(s.precio)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* ── Sección 2: servicios (siempre visibles; se pueden elegir tras la ciudad) ── */}
+      <section className={styles.seccion}>
+        <h2 className={styles.seccionTitulo}>Elige un servicio</h2>
+        {!ubicacion && (
+          <p className={styles.explicacion} id="aviso-elige-ciudad">
+            Elige primero dónde quieres tu cita para poder seleccionar un servicio.
+          </p>
+        )}
+        <div className={styles.serviciosGrid}>
+          {servicios.map(s => (
+            <button
+              key={s.id}
+              type="button"
+              disabled={!ubicacion}
+              aria-describedby={!ubicacion ? 'aviso-elige-ciudad' : undefined}
+              className={`${styles.servicioCard} ${servicio?.id === s.id ? styles.servicioSeleccionado : ''}`}
+              onClick={() => handleServicio(s)}
+            >
+              <span className={styles.servicioNombre}>{s.nombre}</span>
+              <span className={styles.servicioMeta}>
+                {formatDuracion(s.duracion_minutos)} · {formatPrecio(s.precio)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* ── Sección 3: elegir fecha ─────────────────────────────────────── */}
       {ubicacion && servicio && (
