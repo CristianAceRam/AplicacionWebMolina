@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.config import settings
-from app.models import Cita, EstadoCita, Rol, Usuario
+from app.models import Cita, EstadoCita, Rol, Usuario, Ubicacion
 from app.security import hash_password
 
 _SECRETO = "s3creto-de-prueba-para-cron"
@@ -80,6 +80,7 @@ def test_purga_200_borra_antiguas(client, cron_activo, db_session, servicio_cort
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(antigua)
     db_session.commit()

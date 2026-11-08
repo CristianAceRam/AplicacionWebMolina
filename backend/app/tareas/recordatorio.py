@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import SessionLocal
 from app.models import Cita, EstadoCita
-from app.notificaciones.telegram import enviar_aviso_peluquero
+from app.notificaciones.telegram import enviar_aviso_peluquero, nombre_ubicacion, url_instagram
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,13 @@ def enviar_recordatorio(db: Session | None = None, _manana: date | None = None) 
         else:
             lineas = [f"Citas para mañana {fecha_str}:"]
             for cita in citas:
-                hora   = cita.hora_inicio.strftime("%H:%M")
-                nombre = cita.cliente.nombre_completo
-                lineas.append(f"{hora} — {nombre}")
+                partes = [
+                    f"{cita.hora_inicio.strftime('%H:%M')} — {cita.cliente.nombre_completo}",
+                    nombre_ubicacion(cita.ubicacion),
+                ]
+                if cita.cliente.instagram:
+                    partes.append(url_instagram(cita.cliente.instagram))
+                lineas.append(" · ".join(partes))
             mensaje = "\n".join(lineas)
 
         enviado = enviar_aviso_peluquero(mensaje)

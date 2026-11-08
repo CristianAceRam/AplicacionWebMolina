@@ -106,6 +106,7 @@ def exportar_mis_datos(
             hora_inicio=cita.hora_inicio,
             hora_fin=cita.hora_fin,
             estado=cita.estado.value,
+            ubicacion=cita.ubicacion.value,
             servicio_nombre=(
                 servicios[cita.servicio_id].nombre
                 if cita.servicio_id in servicios else "Servicio eliminado"
@@ -122,6 +123,7 @@ def exportar_mis_datos(
         email=usuario.email,
         nombre_completo=usuario.nombre_completo,
         telefono=usuario.telefono,
+        instagram=usuario.instagram,
         rol=usuario.rol.value,
         consentimiento_version=usuario.consentimiento_version,
         consentimiento_fecha=usuario.consentimiento_fecha,
@@ -144,6 +146,8 @@ def actualizar_perfil(
         usuario.nombre_completo = datos.nombre_completo
     if datos.telefono is not None:
         usuario.telefono = datos.telefono
+    if datos.instagram is not None:
+        usuario.instagram = datos.instagram
     db.commit()
     db.refresh(usuario)
     return usuario
@@ -185,6 +189,7 @@ def eliminar_mi_cuenta(
     usuario.email           = f"anon_{usuario.id}@rmolinastyle.invalid"
     usuario.nombre_completo = "Usuario eliminado"
     usuario.telefono        = "000000000"
+    usuario.instagram       = None
     usuario.password_hash   = HASH_ANONIMIZADO
 
     db.commit()

@@ -10,7 +10,7 @@ from app.constants import DIAS_MAX_RESERVA, FRANJA_MINUTOS
 from app.database import get_db
 from app.dependencies import get_usuario_actual, solo_admin
 from app.models import Cita, EstadoCita, ExcepcionFecha, FranjaOcupada, HorarioPeluquero, Rol, Servicio, TipoExcepcion, Usuario
-from app.notificaciones.telegram import enviar_aviso_peluquero
+from app.notificaciones.telegram import enviar_aviso_peluquero, lineas_ciudad_instagram
 from app.rate_limit import get_real_ip, limiter
 from app.schemas import CitaCreate, CitaRead, CitaReprogramar
 from app.security import decode_access_token
@@ -171,6 +171,13 @@ def crear_cita(
             detail="Tu cuenta está bloqueada. Contacta con el peluquero.",
         )
 
+    # 1c. Instagram obligatorio: el del body (ya validado y normalizado) o el del perfil
+    if not (datos.instagram or usuario.instagram):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Necesitamos tu Instagram para confirmar la reserva.",
+        )
+
     # 2–5. Validar ventana, día cerrado, horario y encaje
     _validar_slot(db, servicio, datos.fecha, datos.hora_inicio, today_madrid, now_madrid)
 
@@ -179,8 +186,11 @@ def crear_cita(
         + timedelta(minutes=servicio.duracion_minutos)
     ).time()
 
-    # 6. Transacción atómica: Cita + FranjaOcupada
+    # 6. Transacción atómica: [Instagram en el perfil] + Cita + FranjaOcupada.
+    #    Si hay 409, el rollback deshace también el cambio de Instagram (todo o nada).
     try:
+        if datos.instagram:
+            usuario.instagram = datos.instagram
         cita = Cita(
             cliente_id=usuario.id,
             servicio_id=datos.servicio_id,
@@ -188,6 +198,7 @@ def crear_cita(
             hora_inicio=datos.hora_inicio,
             hora_fin=hora_fin,
             estado=EstadoCita.activa,
+            ubicacion=datos.ubicacion,
         )
         db.add(cita)
         db.flush()  # obtiene cita.id sin confirmar
@@ -212,7 +223,8 @@ def crear_cita(
         f"Nueva reserva\n"
         f"Cliente: {usuario.nombre_completo} | {usuario.telefono}\n"
         f"Servicio: {servicio.nombre}\n"
-        f"Fecha: {fecha_str} a las {hora_str}"
+        f"Fecha: {fecha_str} a las {hora_str}\n"
+        + lineas_ciudad_instagram(cita.ubicacion, usuario.instagram)
     )
     _avisar_peluquero(mensaje)
     return cita
@@ -289,7 +301,8 @@ def cancelar_cita(
             f"Cita cancelada por el cliente\n"
             f"Cliente: {usuario.nombre_completo} | {usuario.telefono}\n"
             f"Servicio: {nombre_servicio}\n"
-            f"Fecha: {fecha_str} a las {hora_str}"
+            f"Fecha: {fecha_str} a las {hora_str}\n"
+            + lineas_ciudad_instagram(cita.ubicacion, usuario.instagram)
         )
         _avisar_peluquero(mensaje)
 
@@ -392,7 +405,8 @@ def reprogramar_cita(
         f"Cliente: {cliente.nombre_completo} | {cliente.telefono}\n"
         f"Servicio: {servicio.nombre}\n"
         f"De: {fecha_ant.strftime('%d/%m/%Y')} a las {hora_ant.strftime('%H:%M')}\n"
-        f"A: {datos.fecha.strftime('%d/%m/%Y')} a las {datos.hora_inicio.strftime('%H:%M')}"
+        f"A: {datos.fecha.strftime('%d/%m/%Y')} a las {datos.hora_inicio.strftime('%H:%M')}\n"
+        + lineas_ciudad_instagram(cita.ubicacion, cliente.instagram)
     )
     _avisar_peluquero(mensaje)
     return cita

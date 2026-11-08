@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.constants import DIAS_MAX_RESERVA
-from app.models import FranjaOcupada, HorarioPeluquero, Servicio
+from app.models import FranjaOcupada, HorarioPeluquero, Servicio, Ubicacion
 
 _MADRID = ZoneInfo("Europe/Madrid")
 
@@ -84,6 +84,7 @@ def test_disponibilidad_excluye_franja_ocupada(client, cliente_token, db_session
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita)
     db_session.flush()

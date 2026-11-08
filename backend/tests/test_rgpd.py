@@ -4,7 +4,7 @@ Tests RGPD: exportación (portabilidad) y supresión (anonimización) de datos.
 from datetime import date, time, timedelta
 
 import pytest
-from app.models import Cita, EstadoCita, FranjaOcupada, Rol, Usuario
+from app.models import Cita, EstadoCita, FranjaOcupada, Rol, Usuario, Ubicacion
 from app.security import create_access_token, hash_password
 
 
@@ -51,6 +51,7 @@ def _cita_futura(db_session, usuario, servicio, dias=2):
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita)
     db_session.flush()
@@ -69,6 +70,7 @@ def _cita_pasada(db_session, usuario, servicio, dias=5):
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita)
     db_session.commit()
@@ -183,3 +185,37 @@ def test_anonimizar_idempotente(client, token_rgpd):
     assert r1.status_code == 200
     r2 = client.delete("/usuarios/me", headers=_auth(token_rgpd))
     assert r2.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Fase E — Instagram y ciudad en exportación y anonimización
+# ---------------------------------------------------------------------------
+
+def test_exportacion_incluye_instagram_y_ubicacion(client, db_session, usuario_rgpd, token_rgpd, servicio_corte):
+    usuario_rgpd.instagram = "rgpd_user"
+    db_session.commit()
+    cita = _cita_futura(db_session, usuario_rgpd, servicio_corte)
+    cita.ubicacion = Ubicacion.granada
+    db_session.commit()
+
+    r = client.get("/usuarios/me/datos", headers=_auth(token_rgpd))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["perfil"]["instagram"] == "rgpd_user"
+    assert data["citas"][0]["ubicacion"] == "granada"
+
+
+def test_exportacion_sin_instagram_es_null(client, usuario_rgpd, token_rgpd):
+    r = client.get("/usuarios/me/datos", headers=_auth(token_rgpd))
+    assert r.status_code == 200
+    assert r.json()["perfil"]["instagram"] is None
+
+
+def test_anonimizar_pone_instagram_a_null(client, db_session, usuario_rgpd, token_rgpd):
+    usuario_rgpd.instagram = "rgpd_user"
+    db_session.commit()
+
+    r = client.delete("/usuarios/me", headers=_auth(token_rgpd))
+    assert r.status_code == 200
+    db_session.refresh(usuario_rgpd)
+    assert usuario_rgpd.instagram is None

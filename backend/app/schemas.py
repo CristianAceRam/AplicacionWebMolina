@@ -4,8 +4,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from app.constants import DURACION_MAX_MINUTOS, FRANJA_MINUTOS
-from app.models import EstadoCita
+from app.constants import DURACION_MAX_MINUTOS, FRANJA_MINUTOS, INSTAGRAM_MAX_LONGITUD
+from app.models import EstadoCita, Ubicacion
 
 # Letras latinas con tildes/acentos, ñ y caracteres europeos comunes, más espacio, guión y apóstrofo
 _NOMBRE_RE = re.compile(
@@ -39,6 +39,31 @@ def _validar_telefono(v: str) -> str:
             "(p. ej. 612345678 o +34 612 345 678)"
         )
     return m.group(1)
+
+
+# Reglas de Instagram: letras, números, '.' y '_'; sin '..'; no empieza ni acaba en '.'.
+_INSTAGRAM_RE = re.compile(
+    rf"^(?!\.)(?!.*\.\.)(?!.*\.$)[a-z0-9._]{{1,{INSTAGRAM_MAX_LONGITUD}}}$"
+)
+
+
+def _validar_instagram(v: str) -> str:
+    """
+    Normaliza y valida un usuario de Instagram (validador ÚNICO: POST /citas y PATCH /usuarios/me).
+    Normaliza: quita espacios alrededor y un '@' inicial, y pasa a minúsculas.
+    """
+    if not isinstance(v, str):
+        raise ValueError("El usuario de Instagram debe ser texto")
+    v = v.strip()
+    if v.startswith("@"):
+        v = v[1:]
+    v = v.lower()
+    if not _INSTAGRAM_RE.match(v):
+        raise ValueError(
+            f"Usuario de Instagram no válido: 1 a {INSTAGRAM_MAX_LONGITUD} caracteres, solo letras, "
+            "números, '.' y '_', sin '..' y sin empezar ni acabar en '.'"
+        )
+    return v
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +104,7 @@ class UsuarioRead(BaseModel):
     telefono: str
     nombre_completo: str
     rol: str
+    instagram: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -86,14 +112,29 @@ class UsuarioRead(BaseModel):
 class ActualizarPerfilIn(BaseModel):
     nombre_completo: str | None = Field(default=None, min_length=1, max_length=100)
     telefono: str | None = None
+    # Solo se puede cambiar, no vaciar (es obligatorio para reservar).
+    # Para eliminarlo junto al resto de datos: DELETE /usuarios/me.
+    instagram: str | None = None
 
     model_config = {"extra": "forbid"}
 
+    @model_validator(mode="before")
+    @classmethod
+    def instagram_no_nulo(cls, data):
+        if isinstance(data, dict) and "instagram" in data and data["instagram"] is None:
+            raise ValueError("El Instagram no se puede dejar vacío; puedes cambiarlo por otro")
+        return data
+
     @model_validator(mode="after")
     def al_menos_un_campo(self) -> "ActualizarPerfilIn":
-        if self.nombre_completo is None and self.telefono is None:
-            raise ValueError("Indica al menos nombre_completo o telefono")
+        if self.nombre_completo is None and self.telefono is None and self.instagram is None:
+            raise ValueError("Indica al menos nombre_completo, telefono o instagram")
         return self
+
+    @field_validator("instagram", mode="before")
+    @classmethod
+    def validar_instagram(cls, v: str | None) -> str | None:
+        return None if v is None else _validar_instagram(v)
 
     @field_validator("nombre_completo", mode="before")
     @classmethod
@@ -120,7 +161,8 @@ class UsuarioAdminRead(BaseModel):
     nombre_completo: str
     rol: str
     bloqueado: bool
-    inasistencias: int  # calculado dinámicamente; no existe como columna en Usuario
+    inasistencias: int  # columna almacenada en Usuario (la purga de citas no la altera)
+    instagram: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -236,8 +278,16 @@ class CitaCreate(BaseModel):
     servicio_id: int = Field(gt=0)
     fecha: date
     hora_inicio: time
+    ubicacion: Ubicacion  # obligatoria: 'alcala' | 'granada'
+    # Opcional si el cliente ya lo tiene en su perfil; si se envía, se guarda en el perfil.
+    instagram: str | None = None
 
     model_config = {"extra": "forbid"}  # rechaza cliente_id, estado, hora_fin del body
+
+    @field_validator("instagram", mode="before")
+    @classmethod
+    def validar_instagram(cls, v: str | None) -> str | None:
+        return None if v is None else _validar_instagram(v)
 
     @field_validator("hora_inicio")
     @classmethod
@@ -259,6 +309,7 @@ class CitaRead(BaseModel):
     hora_inicio: time
     hora_fin: time
     estado: EstadoCita
+    ubicacion: Ubicacion
 
     model_config = {"from_attributes": True}
 
@@ -317,6 +368,7 @@ class CitaExport(BaseModel):
     hora_inicio: time
     hora_fin: time
     estado: str
+    ubicacion: str
     servicio_nombre: str
     servicio_duracion_minutos: int
 
@@ -326,6 +378,7 @@ class PerfilExport(BaseModel):
     email: str
     nombre_completo: str
     telefono: str
+    instagram: str | None
     rol: str
     consentimiento_version: str | None
     consentimiento_fecha: datetime | None

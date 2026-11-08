@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from app.models import Cita, EstadoCita, Rol, Usuario
+from app.models import Cita, EstadoCita, Rol, Usuario, Ubicacion
 from app.security import hash_password
 from app.tareas.recordatorio import enviar_recordatorio
 
@@ -36,6 +36,7 @@ def _crear_cita(db, cliente_id, servicio_id, fecha, hora, estado=EstadoCita.acti
         hora_inicio=hora,
         hora_fin=(datetime.combine(date.min, hora) + timedelta(minutes=30)).time(),
         estado=estado,
+        ubicacion=Ubicacion.alcala,
     )
     db.add(c)
     db.commit()
@@ -134,3 +135,28 @@ def test_script_cli_importable():
     import scripts.recordatorio_diario as cli
     assert cli.enviar_recordatorio is enviar_recordatorio
     assert callable(cli.main)
+
+
+# ---------------------------------------------------------------------------
+# Fase E — ciudad e Instagram en el resumen
+# ---------------------------------------------------------------------------
+
+def test_resumen_incluye_ciudad_e_instagram(db_session, servicio_corte):
+    from app.models import Ubicacion
+
+    manana = date.today() + timedelta(days=1)
+    con_ig = _crear_cliente(db_session, "ig")
+    con_ig.instagram = "cliente.ig"
+    sin_ig = _crear_cliente(db_session, "noig")
+    db_session.commit()
+    c1 = _crear_cita(db_session, con_ig.id, servicio_corte.id, manana, time(10, 0))
+    c1.ubicacion = Ubicacion.granada
+    _crear_cita(db_session, sin_ig.id, servicio_corte.id, manana, time(11, 0))
+    db_session.commit()
+
+    with patch("app.tareas.recordatorio.enviar_aviso_peluquero") as mock_fn:
+        enviar_recordatorio(db=db_session, _manana=manana)
+
+    lineas = mock_fn.call_args[0][0].splitlines()
+    assert lineas[1] == f"10:00 — {con_ig.nombre_completo} · Granada · https://instagram.com/cliente.ig"
+    assert lineas[2] == f"11:00 — {sin_ig.nombre_completo} · Alcalá la Real"

@@ -3,6 +3,7 @@ import logging
 import httpx
 
 from app.config import settings
+from app.constants import NOMBRES_UBICACION
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,34 @@ logger = logging.getLogger(__name__)
 # un timeout corto acota lo que puede retrasar la respuesta si Telegram no contesta.
 TELEGRAM_TIMEOUT_SEGUNDOS = 3.0
 
+
+# ---------------------------------------------------------------------------
+# Formato de los mensajes (texto plano, SIN parse_mode: no hay que escapar
+# '_' ni '.' del usuario de Instagram; Telegram convierte la URL en enlace).
+# ---------------------------------------------------------------------------
+
+def nombre_ubicacion(ubicacion) -> str:
+    """Nombre visible de la ciudad ('alcala' → 'Alcalá la Real'). Acepta el enum o el str."""
+    clave = getattr(ubicacion, "value", ubicacion)
+    return NOMBRES_UBICACION.get(clave, str(clave))
+
+
+def url_instagram(usuario: str) -> str:
+    """Enlace al perfil. El usuario ya está validado (solo [a-z0-9._])."""
+    return f"https://instagram.com/{usuario}"
+
+
+def lineas_ciudad_instagram(ubicacion, instagram: str | None) -> str:
+    """Líneas 'Ciudad: …' e 'Instagram: …' (esta última solo si lo hay) para los avisos."""
+    lineas = [f"Ciudad: {nombre_ubicacion(ubicacion)}"]
+    if instagram:
+        lineas.append(f"Instagram: {url_instagram(instagram)}")
+    return "\n".join(lineas)
+
+
+# ---------------------------------------------------------------------------
+# Envío
+# ---------------------------------------------------------------------------
 
 def enviar_aviso_peluquero(mensaje: str) -> bool:
     """
@@ -28,7 +57,12 @@ def enviar_aviso_peluquero(mensaje: str) -> bool:
     try:
         respuesta = httpx.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": mensaje},
+            json={
+                "chat_id": chat_id,
+                "text": mensaje,
+                # Sin vista previa de los enlaces (Instagram). `disable_web_page_preview` está deprecado.
+                "link_preview_options": {"is_disabled": True},
+            },
             timeout=TELEGRAM_TIMEOUT_SEGUNDOS,
         )
     except Exception as exc:

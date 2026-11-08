@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.constants import DIAS_MAX_RESERVA
-from app.models import Cita, EstadoCita, FranjaOcupada, HorarioPeluquero, Rol, Usuario
+from app.models import Cita, EstadoCita, FranjaOcupada, HorarioPeluquero, Rol, Usuario, Ubicacion
 from app.security import create_access_token, hash_password
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -13,7 +13,7 @@ def _auth(token):
 
 
 def _payload(servicio_id, fecha, hora="10:00:00"):
-    return {"servicio_id": servicio_id, "fecha": str(fecha), "hora_inicio": hora}
+    return {"servicio_id": servicio_id, "fecha": str(fecha), "hora_inicio": hora, "ubicacion": "alcala"}
 
 
 # ---------------------------------------------------------------------------
@@ -39,9 +39,9 @@ def test_reserva_409_solapamiento(client, db_session, servicio_corte, horario_di
     """Segunda reserva al mismo slot → 409 Conflict (UNIQUE en FranjaOcupada)."""
     # Crear dos clientes distintos con tokens directos
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -121,6 +121,7 @@ def test_reserva_cliente_id_en_body(client, cliente_token, servicio_corte, horar
         "servicio_id": servicio_corte.id,
         "fecha": str(fecha_test),
         "hora_inicio": "10:00:00",
+        "ubicacion": "alcala",
         "cliente_id": 9999,
     }
     r = client.post("/citas", json=payload, headers=_auth(cliente_token))
@@ -134,9 +135,9 @@ def test_reserva_cliente_id_en_body(client, cliente_token, servicio_corte, horar
 def test_citas_mias_solo_propias(client, db_session, servicio_corte, horario_dia, fecha_test):
     """GET /citas/mias devuelve únicamente las citas del cliente autenticado."""
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -164,9 +165,9 @@ def test_citas_mias_solo_propias(client, db_session, servicio_corte, horario_dia
 def test_obtener_cita_otro_cliente_404(client, db_session, servicio_corte, horario_dia, fecha_test):
     """GET /citas/{id} de la cita de otro cliente → 404 (no revela existencia)."""
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -190,9 +191,9 @@ def test_obtener_cita_otro_cliente_404(client, db_session, servicio_corte, horar
 def test_citas_admin_ve_todas(client, db_session, admin_token, servicio_corte, horario_dia, fecha_test):
     """GET /citas (admin) devuelve las citas de todos los clientes."""
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -231,9 +232,9 @@ def test_cancelar_propia_cita(client, db_session, cliente_token, servicio_corte,
 def test_cancelar_otro_cliente_404(client, db_session, servicio_corte, horario_dia, fecha_test):
     """C2 intenta cancelar cita de C1 → 404 (anti-IDOR, no revela existencia)."""
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -252,7 +253,7 @@ def test_cancelar_otro_cliente_404(client, db_session, servicio_corte, horario_d
 def test_admin_cancela_cualquier_cita(client, db_session, admin_token, servicio_corte, horario_dia, fecha_test):
     """Admin puede cancelar la cita de cualquier cliente → 200."""
     c = Usuario(email="c@test.com", password_hash=hash_password("x"),
-                telefono="600000010", nombre_completo="C", rol=Rol.cliente)
+                telefono="600000010", nombre_completo="C", rol=Rol.cliente, instagram="cliente_c")
     db_session.add(c)
     db_session.commit()
     db_session.refresh(c)
@@ -279,6 +280,7 @@ def test_cancelar_cita_pasada_422(client, db_session, cliente_token, servicio_co
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita_pasada)
     db_session.commit()
@@ -314,6 +316,7 @@ def test_no_asistida_admin_cita_pasada(client, db_session, admin_token, cliente_
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita_pasada)
     db_session.commit()
@@ -344,6 +347,7 @@ def test_no_asistida_cita_cancelada_409(client, db_session, admin_token, cliente
         hora_inicio=time(11, 0),
         hora_fin=time(11, 30),
         estado=EstadoCita.cancelada,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita)
     db_session.commit()
@@ -363,6 +367,7 @@ def test_no_asistida_cliente_403(client, db_session, cliente_token, servicio_cor
         hora_inicio=time(12, 0),
         hora_fin=time(12, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita)
     db_session.commit()
@@ -382,6 +387,7 @@ def test_no_asistida_incrementa_contador(client, db_session, admin_token, client
         hora_inicio=time(14, 0),
         hora_fin=time(14, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(cita)
     db_session.commit()
@@ -398,9 +404,9 @@ def test_no_asistida_incrementa_contador(client, db_session, admin_token, client
 def test_listar_citas_filtro_fecha(client, db_session, admin_token, servicio_corte, horario_dia, fecha_test):
     """GET /citas?fecha=X devuelve solo las citas de esa fecha."""
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -426,9 +432,9 @@ def test_listar_citas_filtro_fecha(client, db_session, admin_token, servicio_cor
 def test_cancelar_libera_franja_para_nueva_reserva(client, db_session, servicio_corte, horario_dia, fecha_test):
     """Tras cancelar, el slot queda libre y otro cliente puede reservarlo → 201."""
     c1 = Usuario(email="c1@test.com", password_hash=hash_password("x"),
-                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente)
+                 telefono="600000010", nombre_completo="C1", rol=Rol.cliente, instagram="cliente_c1")
     c2 = Usuario(email="c2@test.com", password_hash=hash_password("x"),
-                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente)
+                 telefono="600000011", nombre_completo="C2", rol=Rol.cliente, instagram="cliente_c2")
     db_session.add_all([c1, c2])
     db_session.commit()
     db_session.refresh(c1)
@@ -571,3 +577,116 @@ def test_reserva_fecha_lejana_422(client, cliente_token, servicio_corte):
         headers=_auth(cliente_token),
     )
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Fase E — ciudad de la cita e Instagram obligatorio
+# ---------------------------------------------------------------------------
+
+def _cliente_sin_instagram(db_session, email="sinig@test.com"):
+    u = Usuario(email=email, password_hash=hash_password("x"), telefono="600000020",
+                nombre_completo="Sin Instagram", rol=Rol.cliente)
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+    return u, create_access_token(u.id, u.rol.value)
+
+
+def test_reserva_granada_guarda_ubicacion(client, cliente_token, servicio_corte, horario_dia, fecha_test):
+    body = {**_payload(servicio_corte.id, fecha_test), "ubicacion": "granada"}
+    r = client.post("/citas", json=body, headers=_auth(cliente_token))
+    assert r.status_code == 201
+    assert r.json()["ubicacion"] == "granada"
+    r2 = client.get("/citas/mias", headers=_auth(cliente_token))
+    assert r2.json()[0]["ubicacion"] == "granada"
+
+
+def test_reserva_sin_ubicacion_422(client, cliente_token, servicio_corte, horario_dia, fecha_test):
+    body = _payload(servicio_corte.id, fecha_test)
+    del body["ubicacion"]
+    r = client.post("/citas", json=body, headers=_auth(cliente_token))
+    assert r.status_code == 422
+
+
+def test_reserva_ubicacion_invalida_422(client, cliente_token, servicio_corte, horario_dia, fecha_test):
+    body = {**_payload(servicio_corte.id, fecha_test), "ubicacion": "madrid"}
+    r = client.post("/citas", json=body, headers=_auth(cliente_token))
+    assert r.status_code == 422
+
+
+def test_reserva_sin_instagram_en_perfil_ni_body_422(client, db_session, servicio_corte, horario_dia, fecha_test):
+    u, token = _cliente_sin_instagram(db_session)
+    r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test), headers=_auth(token))
+    assert r.status_code == 422
+    assert "Instagram" in r.json()["detail"]
+    assert db_session.query(Cita).count() == 0
+
+
+def test_reserva_instagram_invalido_422(client, db_session, servicio_corte, horario_dia, fecha_test):
+    u, token = _cliente_sin_instagram(db_session)
+    body = {**_payload(servicio_corte.id, fecha_test), "instagram": "ju..an"}
+    r = client.post("/citas", json=body, headers=_auth(token))
+    assert r.status_code == 422
+    db_session.refresh(u)
+    assert u.instagram is None
+
+
+def test_reserva_instagram_en_body_se_guarda_normalizado(client, db_session, servicio_corte, horario_dia, fecha_test):
+    u, token = _cliente_sin_instagram(db_session)
+    body = {**_payload(servicio_corte.id, fecha_test), "instagram": "@Nuevo.Cliente"}
+    r = client.post("/citas", json=body, headers=_auth(token))
+    assert r.status_code == 201
+    db_session.refresh(u)
+    assert u.instagram == "nuevo.cliente"
+    assert client.get("/usuarios/me", headers=_auth(token)).json()["instagram"] == "nuevo.cliente"
+
+
+def test_reserva_usa_instagram_del_perfil(client, cliente_token, servicio_corte, horario_dia, fecha_test):
+    """El cliente ya tiene Instagram (conftest) → no hace falta enviarlo."""
+    r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test), headers=_auth(cliente_token))
+    assert r.status_code == 201
+
+
+def test_reserva_cambia_instagram_del_perfil(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test):
+    body = {**_payload(servicio_corte.id, fecha_test), "instagram": "otro_usuario"}
+    r = client.post("/citas", json=body, headers=_auth(cliente_token))
+    assert r.status_code == 201
+    u = db_session.query(Usuario).filter_by(email="cli@test.com").one()
+    assert u.instagram == "otro_usuario"
+
+
+def test_reserva_409_no_guarda_instagram(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test):
+    """Si el hueco está ocupado (409), el rollback deshace también el cambio de Instagram."""
+    u_sin, token_sin = _cliente_sin_instagram(db_session)
+    r1 = client.post("/citas", json=_payload(servicio_corte.id, fecha_test), headers=_auth(cliente_token))
+    assert r1.status_code == 201
+
+    body = {**_payload(servicio_corte.id, fecha_test), "instagram": "no_debe_guardarse"}
+    r2 = client.post("/citas", json=body, headers=_auth(token_sin))
+    assert r2.status_code == 409
+    db_session.expire_all()
+    assert db_session.get(Usuario, u_sin.id).instagram is None
+
+
+def test_reserva_cliente_id_en_body_422(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test):
+    otro, _ = _cliente_sin_instagram(db_session)
+    body = {**_payload(servicio_corte.id, fecha_test), "cliente_id": otro.id}
+    r = client.post("/citas", json=body, headers=_auth(cliente_token))
+    assert r.status_code == 422
+
+
+def test_reserva_instagram_solo_afecta_al_del_token(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test):
+    """El Instagram del body se guarda en el usuario del token, nunca en otro."""
+    otro, _ = _cliente_sin_instagram(db_session)
+    body = {**_payload(servicio_corte.id, fecha_test), "instagram": "solo_mio"}
+    assert client.post("/citas", json=body, headers=_auth(cliente_token)).status_code == 201
+    db_session.expire_all()
+    assert db_session.get(Usuario, otro.id).instagram is None
+
+
+def test_agenda_admin_incluye_ubicacion(client, admin_token, cliente_token, servicio_corte, horario_dia, fecha_test):
+    body = {**_payload(servicio_corte.id, fecha_test), "ubicacion": "granada"}
+    client.post("/citas", json=body, headers=_auth(cliente_token))
+    r = client.get("/citas", params={"fecha": str(fecha_test)}, headers=_auth(admin_token))
+    assert r.status_code == 200
+    assert r.json()[0]["ubicacion"] == "granada"

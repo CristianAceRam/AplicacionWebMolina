@@ -19,6 +19,7 @@ def _to_read(usuario: Usuario) -> UsuarioAdminRead:
         rol=usuario.rol,
         bloqueado=usuario.bloqueado,
         inasistencias=usuario.inasistencias,
+        instagram=usuario.instagram,
     )
 
 

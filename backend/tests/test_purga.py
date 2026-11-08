@@ -3,7 +3,7 @@ from datetime import date, time, timedelta
 
 import pytest
 
-from app.models import Cita, EstadoCita, FranjaOcupada, Rol, Usuario
+from app.models import Cita, EstadoCita, FranjaOcupada, Rol, Usuario, Ubicacion
 from app.security import hash_password
 from app.tareas.purga import _fecha_limite, purgar
 
@@ -31,6 +31,7 @@ def _cita(db, usuario, servicio, dias_atras: int, estado=EstadoCita.activa):
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=estado,
+        ubicacion=Ubicacion.alcala,
     )
     db.add(c)
     db.commit()

@@ -14,6 +14,7 @@ from app.models import (
     Servicio,
     TipoExcepcion,
     Usuario,
+    Ubicacion,
 )
 from app.security import create_access_token, hash_password
 
@@ -68,6 +69,7 @@ def _cita_activa(db_session, usuario_id: int, servicio_id: int, fecha: date) -> 
         hora_inicio=time(10, 0),
         hora_fin=time(10, 30),
         estado=EstadoCita.activa,
+        ubicacion=Ubicacion.alcala,
     )
     db_session.add(c)
     db_session.commit()
@@ -219,7 +221,7 @@ def test_cita_fecha_cerrada_422(client, cliente_token, db_session):
 
     r = client.post(
         "/citas",
-        json={"servicio_id": s.id, "fecha": str(fecha), "hora_inicio": "10:00:00"},
+        json={"servicio_id": s.id, "fecha": str(fecha), "hora_inicio": "10:00:00", "ubicacion": "alcala"},
         headers=_auth(cliente_token),
     )
     assert r.status_code == 422
@@ -252,7 +254,7 @@ def test_hoy_cerrado_cita_422(client, cliente_token, db_session):
     # Hora futura (23:00) para que no falle por "hora pasada" antes del check de excepción
     r = client.post(
         "/citas",
-        json={"servicio_id": s.id, "fecha": str(hoy), "hora_inicio": "23:00:00"},
+        json={"servicio_id": s.id, "fecha": str(hoy), "hora_inicio": "23:00:00", "ubicacion": "alcala"},
         headers=_auth(cliente_token),
     )
     assert r.status_code == 422

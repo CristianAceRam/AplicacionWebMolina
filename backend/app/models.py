@@ -2,7 +2,7 @@ import enum
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from app.constants import DURACION_MAX_MINUTOS, FRANJA_MINUTOS
+from app.constants import DURACION_MAX_MINUTOS, FRANJA_MINUTOS, INSTAGRAM_MAX_LONGITUD
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -37,6 +37,12 @@ class EstadoCita(str, enum.Enum):
     no_asistida = "no_asistida"
 
 
+class Ubicacion(str, enum.Enum):
+    """Ciudad de la cita. Nombres visibles en constants.NOMBRES_UBICACION."""
+    alcala  = "alcala"
+    granada = "granada"
+
+
 # ---------------------------------------------------------------------------
 # Modelos
 # ---------------------------------------------------------------------------
@@ -60,6 +66,10 @@ class Usuario(Base):
 
     consentimiento_version : Mapped[str | None]      = mapped_column(String(20),              nullable=True)
     consentimiento_fecha   : Mapped[datetime | None]  = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Normalizado (sin @, minúsculas). Nullable en BD (cuentas antiguas), pero
+    # obligatorio para reservar: POST /citas lo exige.
+    instagram : Mapped[str | None] = mapped_column(String(INSTAGRAM_MAX_LONGITUD), nullable=True)
 
     citas: Mapped[list["Cita"]] = relationship(back_populates="cliente")
 
@@ -101,6 +111,9 @@ class Cita(Base):
         CheckConstraint(
             "estado IN ('activa','cancelada','no_asistida')", name="ck_cita_estado"
         ),
+        CheckConstraint(
+            "ubicacion IN ('alcala','granada')", name="ck_cita_ubicacion"
+        ),
     )
 
     id          : Mapped[int]        = mapped_column(primary_key=True)
@@ -114,8 +127,15 @@ class Cita(Base):
                       SAEnum(EstadoCita, native_enum=False, length=15),
                       default=EstadoCita.activa,
                   )
+    # Ciudad de la cita. No afecta a la disponibilidad (agenda única).
+    # Sin default en el modelo: el código siempre la indica. (La BD tiene un
+    # DEFAULT 'alcala' temporal solo para convivir con el código anterior.)
+    ubicacion   : Mapped[Ubicacion]  = mapped_column(
+                      SAEnum(Ubicacion, native_enum=False, length=10),
+                      nullable=False,
+                  )
 
-    cliente  : Mapped["Usuario"]             = relationship(back_populates="citas")
+    cliente  : Mapped["Usuario"]           = relationship(back_populates="citas")
     servicio : Mapped["Servicio"]            = relationship(back_populates="citas")
     franjas  : Mapped[list["FranjaOcupada"]] = relationship(back_populates="cita")
 

@@ -20,6 +20,7 @@ def test_reserva_dispara_aviso(client, cliente_token, servicio_corte, horario_di
                 "servicio_id": servicio_corte.id,
                 "fecha": str(fecha_test),
                 "hora_inicio": "10:00:00",
+                "ubicacion": "alcala",
             },
             headers=_auth(cliente_token),
         )
@@ -35,6 +36,7 @@ def test_reserva_mensaje_contiene_datos(client, cliente_token, servicio_corte, h
                 "servicio_id": servicio_corte.id,
                 "fecha": str(fecha_test),
                 "hora_inicio": "10:00:00",
+                "ubicacion": "alcala",
             },
             headers=_auth(cliente_token),
         )
@@ -54,6 +56,7 @@ def test_cancelacion_cliente_dispara_aviso(client, cliente_token, servicio_corte
             "servicio_id": servicio_corte.id,
             "fecha": str(fecha_test),
             "hora_inicio": "10:00:00",
+            "ubicacion": "alcala",
         },
         headers=_auth(cliente_token),
     )
@@ -75,6 +78,7 @@ def test_cancelacion_admin_no_dispara_aviso(
             "servicio_id": servicio_corte.id,
             "fecha": str(fecha_test),
             "hora_inicio": "10:00:00",
+            "ubicacion": "alcala",
         },
         headers=_auth(cliente_token),
     )
@@ -129,6 +133,7 @@ def test_reserva_falla_envio_devuelve_201(
                 "servicio_id": servicio_corte.id,
                 "fecha": str(fecha_test),
                 "hora_inicio": "10:00:00",
+                "ubicacion": "alcala",
             },
             headers=_auth(cliente_token),
         )
@@ -140,7 +145,7 @@ def test_reserva_falla_envio_devuelve_201(
 def _reservar(client, token, servicio_id, fecha, hora="10:00:00"):
     r = client.post(
         "/citas",
-        json={"servicio_id": servicio_id, "fecha": str(fecha), "hora_inicio": hora},
+        json={"servicio_id": servicio_id, "fecha": str(fecha), "hora_inicio": hora, "ubicacion": "alcala"},
         headers=_auth(token),
     )
     assert r.status_code == 201
@@ -231,3 +236,88 @@ def test_excepcion_no_se_registra_con_detalle(caplog):
 
     assert "tok-secreto" not in caplog.text
     assert "ConnectError" in caplog.text
+
+
+# ── Bloque D: Fase E — ciudad e Instagram en los avisos ───────────────────────
+
+def test_reserva_mensaje_incluye_ciudad_e_instagram(
+    client, cliente_token, servicio_corte, horario_dia, fecha_test
+):
+    with patch("app.routers.citas.enviar_aviso_peluquero") as mock_fn:
+        r = client.post(
+            "/citas",
+            json={"servicio_id": servicio_corte.id, "fecha": str(fecha_test),
+                  "hora_inicio": "10:00:00", "ubicacion": "granada"},
+            headers=_auth(cliente_token),
+        )
+    assert r.status_code == 201
+    mensaje = mock_fn.call_args[0][0]
+    assert "Ciudad: Granada" in mensaje
+    assert "https://instagram.com/cliente_test" in mensaje
+
+
+def test_cancelacion_mensaje_incluye_ciudad_e_instagram(
+    client, cliente_token, servicio_corte, horario_dia, fecha_test
+):
+    cita_id = _reservar(client, cliente_token, servicio_corte.id, fecha_test)
+    with patch("app.routers.citas.enviar_aviso_peluquero") as mock_fn:
+        r = client.patch(f"/citas/{cita_id}/cancelar", headers=_auth(cliente_token))
+    assert r.status_code == 200
+    mensaje = mock_fn.call_args[0][0]
+    assert "Ciudad: Alcalá la Real" in mensaje
+    assert "https://instagram.com/cliente_test" in mensaje
+
+
+def test_reprogramacion_mensaje_incluye_ciudad_e_instagram(client, db_session, cliente_token, servicio_corte):
+    from datetime import date, time, timedelta
+
+    from app.models import HorarioPeluquero
+
+    origen = date.today() + timedelta(days=2)
+    destino = date.today() + timedelta(days=3)
+    for f in (origen, destino):
+        db_session.add(HorarioPeluquero(dia_semana=f.weekday(), hora_apertura=time(9, 0), hora_cierre=time(18, 0)))
+    db_session.commit()
+    cita_id = _reservar(client, cliente_token, servicio_corte.id, origen)
+
+    with patch("app.routers.citas.enviar_aviso_peluquero") as mock_fn:
+        r = client.patch(
+            f"/citas/{cita_id}/reprogramar",
+            json={"fecha": str(destino), "hora_inicio": "11:00:00"},
+            headers=_auth(cliente_token),
+        )
+    assert r.status_code == 200
+    mensaje = mock_fn.call_args[0][0]
+    assert "De:" in mensaje and "A:" in mensaje
+    assert "Ciudad: Alcalá la Real" in mensaje
+    assert "https://instagram.com/cliente_test" in mensaje
+
+
+def test_lineas_sin_instagram_omite_la_linea():
+    from app.models import Ubicacion
+    from app.notificaciones.telegram import lineas_ciudad_instagram
+
+    assert lineas_ciudad_instagram(Ubicacion.granada, None) == "Ciudad: Granada"
+    assert lineas_ciudad_instagram("alcala", "juan.p") == (
+        "Ciudad: Alcalá la Real\nInstagram: https://instagram.com/juan.p"
+    )
+
+
+def test_payload_desactiva_vista_previa_de_enlaces():
+    """Todos los envíos llevan link_preview_options.is_disabled (no el deprecado disable_web_page_preview)."""
+    from app.notificaciones.telegram import enviar_aviso_peluquero
+
+    with (
+        patch("app.notificaciones.telegram.settings") as mock_cfg,
+        patch("app.notificaciones.telegram.httpx.post") as mock_post,
+    ):
+        mock_cfg.telegram_bot_token = "tok"
+        mock_cfg.telegram_chat_id = "999"
+        mock_post.return_value = httpx.Response(200)
+        enviar_aviso_peluquero("Instagram: https://instagram.com/juan")
+
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["link_preview_options"] == {"is_disabled": True}
+    assert "disable_web_page_preview" not in payload
+    assert "parse_mode" not in payload
+    assert payload["text"] == "Instagram: https://instagram.com/juan"

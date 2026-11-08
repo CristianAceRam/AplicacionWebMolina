@@ -130,6 +130,7 @@ def cliente_token(db_session):
         telefono="600000001",
         nombre_completo="Cliente Test",
         rol=Rol.cliente,
+        instagram="cliente_test",  # obligatorio para reservar (Fase E)
     )
     db_session.add(cliente)
     db_session.commit()

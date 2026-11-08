@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from app.models import (
     Cita, EstadoCita, ExcepcionFecha, FranjaOcupada,
     HorarioPeluquero, Rol, TipoExcepcion, Usuario,
+    Ubicacion,
 )
 from app.security import create_access_token, decode_access_token, hash_password
 
@@ -35,6 +36,7 @@ def _crear_cliente(db, suffix="b"):
         telefono="600000099",
         nombre_completo=f"Cliente {suffix.upper()} Test",
         rol=Rol.cliente,
+        instagram=f"cliente_{suffix}",
     )
     db.add(u)
     db.commit()
@@ -62,6 +64,7 @@ def _crear_cita_db(db, cliente_id, servicio_id, fecha, hora_inicio, estado=Estad
         cliente_id=cliente_id, servicio_id=servicio_id,
         fecha=fecha, hora_inicio=hora_inicio, hora_fin=hora_fin,
         estado=estado,
+        ubicacion=Ubicacion.alcala,
     )
     db.add(cita)
     db.flush()
@@ -73,7 +76,7 @@ def _crear_cita_db(db, cliente_id, servicio_id, fecha, hora_inicio, estado=Estad
 
 def _crear_cita_api(client, token, servicio_id, fecha, hora="10:00:00"):
     r = client.post("/citas",
-                    json={"servicio_id": servicio_id, "fecha": str(fecha), "hora_inicio": hora},
+                    json={"servicio_id": servicio_id, "fecha": str(fecha), "hora_inicio": hora, "ubicacion": "alcala"},
                     headers=_auth(token))
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -119,7 +122,7 @@ def test_reprogramar_libera_franja_para_tercero(client, db_session, cliente_toke
 
     u2 = _crear_cliente(db_session, "ter")
     r = client.post("/citas",
-                    json={"servicio_id": servicio_corte.id, "fecha": str(_BASE), "hora_inicio": "10:00:00"},
+                    json={"servicio_id": servicio_corte.id, "fecha": str(_BASE), "hora_inicio": "10:00:00", "ubicacion": "alcala"},
                     headers=_auth(_token(u2)))
     assert r.status_code == 201
 
@@ -158,7 +161,7 @@ def test_reprogramar_hueco_ocupado_409_cita_intacta(client, db_session, cliente_
     # Cliente B ocupa el destino (11:00)
     u2 = _crear_cliente(db_session, "b2")
     client.post("/citas",
-                json={"servicio_id": servicio_corte.id, "fecha": str(_BASE), "hora_inicio": "11:00:00"},
+                json={"servicio_id": servicio_corte.id, "fecha": str(_BASE), "hora_inicio": "11:00:00", "ubicacion": "alcala"},
                 headers=_auth(_token(u2)))
 
     r = _reprogramar(client, cliente_token, cita_id, _BASE, "11:00:00")
@@ -281,3 +284,42 @@ def test_reprogramar_telegram_enviado(client, db_session, cliente_token, servici
     msg = mock_tg.call_args[0][0]
     assert "De:" in msg
     assert "A:" in msg
+
+
+# ---------------------------------------------------------------------------
+# Fase E — la reprogramación mantiene la ciudad
+# ---------------------------------------------------------------------------
+
+def test_reprogramar_mantiene_ubicacion(client, db_session, cliente_token, servicio_corte):
+    _asegurar_horario(db_session, _BASE)
+    _asegurar_horario(db_session, _DEST)
+    r = client.post(
+        "/citas",
+        json={"servicio_id": servicio_corte.id, "fecha": str(_BASE), "hora_inicio": "10:00:00", "ubicacion": "granada"},
+        headers=_auth(cliente_token),
+    )
+    assert r.status_code == 201
+    cita_id = r.json()["id"]
+
+    r2 = _reprogramar(client, cliente_token, cita_id, _DEST, "11:00:00")
+    assert r2.status_code == 200
+    assert r2.json()["ubicacion"] == "granada"
+    db_session.expire_all()
+    assert db_session.get(Cita, cita_id).ubicacion == Ubicacion.granada
+
+
+def test_reprogramar_no_acepta_ubicacion_422(client, db_session, cliente_token, servicio_corte):
+    _asegurar_horario(db_session, _BASE)
+    _asegurar_horario(db_session, _DEST)
+    cita_id = _crear_cita_api(client, cliente_token, servicio_corte.id, _BASE, "10:00:00")
+
+    r = client.patch(
+        f"/citas/{cita_id}/reprogramar",
+        json={"fecha": str(_DEST), "hora_inicio": "11:00:00", "ubicacion": "granada"},
+        headers=_auth(cliente_token),
+    )
+    assert r.status_code == 422
+    db_session.expire_all()
+    cita = db_session.get(Cita, cita_id)
+    assert cita.ubicacion == Ubicacion.alcala
+    assert cita.fecha == _BASE

@@ -160,3 +160,50 @@ def test_cambiar_password_sin_token_401(client):
         json={"password_actual": "clientepass123", "password_nueva": "nuevaClave99"},
     )
     assert r.status_code == 401
+
+
+# ── Fase E: Instagram en el perfil ────────────────────────────────────────────
+
+def test_me_incluye_instagram(client, cliente_token):
+    r = client.get("/usuarios/me", headers=_auth(cliente_token))
+    assert r.status_code == 200
+    assert r.json()["instagram"] == "cliente_test"
+
+
+def test_actualizar_instagram_normaliza(client, cliente_token):
+    r = client.patch("/usuarios/me", json={"instagram": "@Mi.Nuevo_IG"}, headers=_auth(cliente_token))
+    assert r.status_code == 200
+    assert r.json()["instagram"] == "mi.nuevo_ig"
+    assert client.get("/usuarios/me", headers=_auth(cliente_token)).json()["instagram"] == "mi.nuevo_ig"
+
+
+def test_actualizar_instagram_invalido_422(client, cliente_token):
+    for malo in ["juan.", ".juan", "ju..an", "juan-perez", "", "x" * 31]:
+        r = client.patch("/usuarios/me", json={"instagram": malo}, headers=_auth(cliente_token))
+        assert r.status_code == 422, malo
+    assert client.get("/usuarios/me", headers=_auth(cliente_token)).json()["instagram"] == "cliente_test"
+
+
+def test_actualizar_instagram_no_se_puede_vaciar(client, cliente_token):
+    r = client.patch("/usuarios/me", json={"instagram": None}, headers=_auth(cliente_token))
+    assert r.status_code == 422
+    assert client.get("/usuarios/me", headers=_auth(cliente_token)).json()["instagram"] == "cliente_test"
+
+
+def test_patch_whitelist_rechaza_campos_ajenos(client, cliente_token):
+    for campo, valor in [("rol", "admin"), ("bloqueado", False), ("id", 999), ("inasistencias", 0)]:
+        r = client.patch(
+            "/usuarios/me",
+            json={"instagram": "valido_ok", campo: valor},
+            headers=_auth(cliente_token),
+        )
+        assert r.status_code == 422, campo
+
+
+def test_patch_instagram_solo_toca_al_usuario_del_token(client, db_session, admin_token, cliente_token):
+    from app.models import Usuario
+    r = client.patch("/usuarios/me", json={"instagram": "cambio_propio"}, headers=_auth(cliente_token))
+    assert r.status_code == 200
+    admin = db_session.query(Usuario).filter_by(email="admin@test.com").one()
+    db_session.refresh(admin)
+    assert admin.instagram is None
