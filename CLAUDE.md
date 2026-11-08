@@ -256,3 +256,4 @@ Paleta:
 - Fases pequeñas y verificables. Tests pytest por endpoint. Nunca secretos en el código. Si algo no está claro, pregunta antes de inventar.
 - Trabaja en la rama `feature/*` que se indique; nunca en `render`.
 - Si hay migración Alembic, recuerda que en producción se aplica a mano contra Neon (URL directa) antes de desplegar el código que la usa.
+- Antes de ejecutar migraciones o scripts contra una BD (alembic, purga, seed), muestra host, puerto, nombre de la BD y `alembic current`, y espera confirmación. Nunca asumas que localhost:5432 es Docker.
