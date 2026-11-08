@@ -1,210 +1,258 @@
 # CLAUDE.md — Gestor de Citas Peluquería RM
-
+ 
 > Archivo de contexto del proyecto para Claude Code. Léelo antes de generar o modificar código y respeta todas las decisiones.
-
+ 
 ---
-
+ 
 ## Contexto
-
-App web de gestión de citas para una peluquería/barbería real ("RM — Peluquería · Barbería"), un único peluquero. Proyecto en producción, desarrollador único. **Uso principal en móvil**, pero responsiva.
-
+ 
+App web de gestión de citas para una peluquería/barbería real ("RM — Peluquería · Barbería"), un único peluquero que trabaja en **dos ciudades: Alcalá la Real y Granada** (con una única agenda). Proyecto en producción, desarrollador único. **Uso principal en móvil**, pero responsiva.
+ 
 ---
-
+ 
 ## Stack (fijado)
-
-- Backend: FastAPI (Python). Frontend: React + Vite. BD: PostgreSQL.
+ 
+- Backend: FastAPI (Python 3.14). Frontend: React + Vite (JavaScript). BD: PostgreSQL.
 - ORM: SQLAlchemy + Alembic. Validación: Pydantic. Auth: JWT (cabecera `Authorization: Bearer`). Rate limiting: slowapi. Tests: pytest.
 - Entorno local: PostgreSQL en contenedor Docker (docker-compose) + HeidiSQL.
-- Hosting: Render (backend Web Service de pago, PostgreSQL gestionado con backups, frontend static site, **Cron Job para el recordatorio diario**).
+- **Hosting de producción**: **Vercel Hobby** con dos proyectos: raíz `frontend/` (static Vite) y raíz `backend/` (FastAPI con el runtime de Python de Vercel), región de funciones `fra1`. BD: **Neon Free** (Frankfurt). DNS en Cloudflare ("DNS only"). Tareas programadas con **Vercel Cron**. Detalles en `DESPLIEGUE_VERCEL.md`.
+- **Histórico**: la versión desplegada en Render está en la rama `render` y en el tag `render-v1`. **No tocar.** `render.yaml`, `seed.py` y `DESPLIEGUE_RENDER.md` se conservan solo como referencia.
 - Sin tiempo real: la disponibilidad se refresca al recargar.
-
 ---
-
+ 
+## Ramas
+ 
+- `main` = producción (Vercel despliega automáticamente desde aquí).
+- `render` = congelada (versión de Render).
+- Las funciones nuevas se desarrollan en ramas `feature/*` creadas desde `main`, se prueban en local y se mezclan en `main` cuando están listas.
+- En Vercel, `DATABASE_URL`, `TELEGRAM_*` y `CRON_SECRET` se configuran **solo en el entorno Production**: las previews de otras ramas no deben tocar la BD real ni avisar al peluquero.
+---
+ 
+## Reglas serverless (Vercel + Neon) — obligatorias
+ 
+- **Nada de trabajo después de enviar la respuesta** (no usar `BackgroundTasks`): todo se hace antes de responder.
+- Conexiones a BD con `NullPool` (`DB_NULLPOOL=true`) y `prepare_threshold=None`, usando la URL `-pooler` de Neon. Si quedan conexiones abiertas, Neon no escala a cero y se agotan las 100 CU-hours gratis del mes.
+- `/health` **nunca** toca la BD (lo consulta el monitor de uptime cada pocos minutos).
+- **No** se ejecutan migraciones al arrancar. Migraciones a mano: `alembic upgrade head` contra la URL **directa** de Neon (sin `-pooler`).
+- La IP del cliente se obtiene de las cabeceras de Vercel (`app/rate_limit.py`, detección por plataforma). El rate limiting es "best effort" (contadores en memoria por instancia).
+- `tzdata` es dependencia obligatoria (sin ella, `ZoneInfo("Europe/Madrid")` falla en Linux y no arranca la API).
+---
+ 
 ## Convenciones
-
+ 
 - Dominio en español (`Usuario`, `Cita`, `Servicio`...). Secretos solo en variables de entorno.
 - Cada endpoint nuevo con su test pytest. Esquemas de entrada y salida separados.
 - En FastAPI, rutas literales antes que rutas con parámetro.
-
 ---
-
+ 
 ## Roles y autenticación
-
-- **admin**: peluquero y desarrollador. Solo 2 cuentas fijas, creadas por seed (env vars). No hay registro público de admins.
+ 
+- **admin**: peluquero y desarrollador. Solo 2 cuentas fijas (ya existen en la BD). No hay registro público de admins.
 - **cliente**: se registra él mismo.
-
 Registro de cliente (`POST /registro`, solo crea rol cliente; el rol nunca se acepta del body):
-- `nombre_completo`: obligatorio. Validar que contenga **al menos nombre y apellido** (mínimo dos palabras), solo letras/espacios/guiones/acentos. (No se puede garantizar que sea real; esto solo rechaza basura.)
-- `telefono`: obligatorio, formato válido. Sirve para **contactar** al cliente.
+- `nombre_completo`: obligatorio. Al menos nombre y apellido (mínimo dos palabras), solo letras/espacios/guiones/acentos.
+- `telefono`: obligatorio, formato España, normalizado. Sirve para **contactar** al cliente.
 - `email`: obligatorio, válido y único.
-- `password`: obligatorio, hasheado con bcrypt (passlib). Nunca en texto plano.
-
+- `password`: obligatorio, mínimo 8 caracteres, hasheado con bcrypt (passlib). Nunca en texto plano.
+- Checkbox de consentimiento no premarcado (ver "Cumplimiento legal").
 Dependencias de seguridad: `get_usuario_actual`, `solo_admin`.
-
-**Duración de sesión**: el JWT dura **7 días** (constante/env var configurable, p. ej. `ACCESS_TOKEN_EXPIRE_MINUTES = 60*24*7`), para mantener la sesión iniciada y mejorar la UX. Decisión consciente para el piloto (sin pagos ni datos sensibles): NO se usan refresh tokens todavía; el JWT no es revocable, asumido. El logout borra el token del `localStorage` en el cliente. Si en el futuro hay pagos/datos sensibles → migrar a access token corto + refresh token.
-
+ 
+**Duración de sesión**: el JWT dura **7 días** (configurable, `ACCESS_TOKEN_EXPIRE_MINUTES`). Sin refresh tokens; el JWT no es revocable (asumido). El logout borra el token del `localStorage`. Si en el futuro hay pagos/datos sensibles → access token corto + refresh token.
+ 
 ---
-
+ 
 ## Modelo de datos (basado en FRANJAS de 30 min)
-
-- **Usuario**: `id`, `email` (único), `password_hash`, `telefono`, `nombre_completo`, `rol` ('admin' | 'cliente'), `bloqueado` (bool, def. false).
-- **Servicio**: `id`, `nombre`, `duracion_minutos` (**múltiplo de 30, máximo 300 min = 5 h**), `precio`, `activo` (bool, borrado lógico).
-- **HorarioPeluquero**: tramos de apertura por día de la semana (admite varios tramos/día, p. ej. 9:00–14:00 y 17:00–21:00). Horario **recurrente semanal**.
-- **Cita**: `id`, `cliente_id`, `servicio_id`, `fecha`, `hora_inicio`, `hora_fin`, `estado` ('activa' | 'cancelada' | 'no_asistida').
-- **FranjaOcupada**: `id`, `cita_id` (FK), `fecha`, `hora`. Ocupación real; fuente de verdad de la disponibilidad. Los valores de `hora` caen en :00/:30.
-- **ExcepcionHorario** (días cerrados): excepción por **fecha concreta** que tiene prioridad sobre el horario semanal. Ver sección "Excepciones de horario".
-
-**Tamaño de franja = 30 min**, centralizado en UNA constante única (`FRANJA_MINUTOS = 30`) usada en TODA la lógica de franjas — nunca hardcodear el valor por el código. Nº de franjas de un servicio = `duracion_minutos / FRANJA_MINUTOS`. Duración máxima de un servicio = `DURACION_MAX_MINUTOS = 300` (5 h).
-
-Ejemplos: corte 30 min = 1 franja · tinte 60 min = 2 franjas · servicio de 90 min = 3 franjas · … · servicio largo de 300 min (5 h) = 10 franjas. (Sin reposo entre franjas.)
-
+ 
+- **Usuario**: `id`, `email` (único), `password_hash`, `telefono`, `nombre_completo`, `rol` ('admin' | 'cliente'), `bloqueado` (bool), `inasistencias` (int, almacenado), `consentimiento_version`, `consentimiento_fecha`, **`instagram`** (str, nullable en BD pero obligatorio para reservar — NUEVO, Fase E), **`acepta_comunicaciones`** (bool, def. false), **`comunicaciones_fecha`** (timestamp, nullable), **`ultimo_email_reactivacion`** (timestamp, nullable) — los tres últimos NUEVOS, Fase G.
+- **Servicio**: `id`, `nombre`, `duracion_minutos` (**múltiplo de 30, máximo 300 min = 5 h**), `precio`, `activo` (borrado lógico). **Mismos servicios y precios en las dos ciudades.**
+- **HorarioPeluquero**: tramos de apertura por día de la semana (varios tramos/día). Horario recurrente semanal, **único para las dos ciudades**.
+- **Cita**: `id`, `cliente_id`, `servicio_id`, `fecha`, `hora_inicio`, `hora_fin`, `estado` ('activa' | 'cancelada' | 'no_asistida'), **`ubicacion`** ('alcala' | 'granada', obligatoria — NUEVO, ver "Ubicaciones").
+- **FranjaOcupada**: `id`, `cita_id` (FK), `fecha`, `hora`. Fuente de verdad de la disponibilidad. Agenda única: una franja ocupada lo está para las dos ciudades.
+- **ExcepcionFecha** (días cerrados): excepción por fecha concreta, con prioridad sobre el horario semanal.
+**Tamaño de franja = 30 min**, centralizado en UNA constante (`FRANJA_MINUTOS = 30`) — nunca hardcodear. Nº de franjas = `duracion_minutos / FRANJA_MINUTOS`. Duración máxima = `DURACION_MAX_MINUTOS = 300`.
+ 
 ---
-
+ 
 ## REGLA CRÍTICA: no reservas solapadas
-
-`UNIQUE (fecha, hora)` en `FranjaOcupada`: cada franja pertenece a una sola cita. Crear cita = insertar la Cita + sus N franjas (de 30 min) en UNA transacción; si una franja ya existe -> IntegrityError -> rollback -> `409 Conflict` -> el frontend pide recargar. Concurrencia resuelta a nivel de BD.
-
+ 
+`UNIQUE (fecha, hora)` en `FranjaOcupada`: cada franja pertenece a una sola cita. Crear cita = insertar la Cita + sus N franjas en UNA transacción; si una franja ya existe → IntegrityError → rollback → `409 Conflict` → el frontend pide recargar. Concurrencia resuelta a nivel de BD.
+ 
 ---
-
+ 
 ## Disponibilidad
-
-`GET /disponibilidad?fecha=&servicio_id=` devuelve SOLO las horas de inicio válidas para ese servicio: las **N franjas de 30 min consecutivas** libres y dentro de un mismo tramo de apertura (N = `duracion_minutos / FRANJA_MINUTOS`). Un servicio de 60 min solo ofrece inicios donde caben 2 franjas; uno de 5 h, donde caben 10 franjas seguidas. Si la fecha es hoy, no se ofrecen horas pasadas. Solo se ofrecen fechas **dentro de la ventana de reserva** y que **no sean un día cerrado** (ver secciones siguientes); en esos casos, sin horas. El frontend solo muestra esas horas reservables.
-
+ 
+`GET /disponibilidad?fecha=&servicio_id=` devuelve SOLO las horas de inicio válidas: N franjas de 30 min consecutivas libres dentro de un mismo tramo de apertura. Si la fecha es hoy, no se ofrecen horas pasadas. Fuera de la ventana de reserva o en día cerrado → sin horas. **La ciudad no afecta a la disponibilidad** (agenda única).
+ 
 ---
-
-## Ventana de reserva (horizonte de días)
-
-Un cliente solo puede reservar dentro de una ventana **rodante** de como máximo **`DIAS_MAX_RESERVA = 30`** días naturales desde hoy: rango **[hoy, hoy + 30 días]** (ambos inclusive). "Hoy" se calcula SIEMPRE en **Europe/Madrid**. Como se computa en cada petición, la ventana se desplaza sola con el paso de los días (sin cron). Objetivo: evitar reservas en fechas absurdamente lejanas.
-
-- Constante única/configurable (`DIAS_MAX_RESERVA`), definida en el backend.
-- **Backend (defensa real)**: `GET /disponibilidad` devuelve `horas_disponibles` vacío para fechas fuera de la ventana (no error). `POST /citas` rechaza con **422** (mensaje claro) si la fecha está fuera de `[hoy, hoy+DIAS_MAX_RESERVA]`.
-- **Frontend**: el calendario de Reservar deshabilita los días fuera de la ventana (los pasados Y los posteriores a hoy+30). Construir fechas con componentes locales del `Date` (nunca `toISOString()`). Mantener el valor 30 en sintonía con el backend.
-
+ 
+## Ventana de reserva
+ 
+Ventana rodante de `DIAS_MAX_RESERVA = 30` días: rango [hoy, hoy + 30] con "hoy" en **Europe/Madrid**.
+- Backend: `/disponibilidad` vacío fuera de la ventana; `POST /citas` → 422.
+- Frontend: calendario con los días fuera de la ventana deshabilitados. Fechas con componentes locales del `Date` (nunca `toISOString()`).
 ---
-
+ 
 ## Excepciones de horario (días cerrados)
-
-El peluquero puede marcar **fechas concretas como cerradas** (vacaciones, festivo, un día suelto) SIN tocar el horario semanal recurrente — los demás días de esa misma semana siguen abiertos. Una fecha cerrada **tiene prioridad sobre el horario semanal**: ese día no hay disponibilidad aunque su día de la semana tenga tramos.
-
-- **Modelo (`ExcepcionFecha`)**: excepción por **fecha** (solo la fecha, **sin campo motivo**), con discriminador `tipo` (de momento siempre "cerrado"). Diseñado para **extenderse a futuro** a "horarios especiales por fecha" sin construir esa parte ahora.
-- **Endpoints admin (`solo_admin`)**: listar, añadir y eliminar días cerrados. Al añadir, **si esa fecha YA tiene citas activas → 409** con el conteo; no se cierra por encima de citas vivas.
-- **Endpoint cliente**: obtener las fechas cerradas dentro de `[hoy, hoy+DIAS_MAX_RESERVA]` para deshabilitarlas en el calendario.
-- **Disponibilidad / reserva**: fecha cerrada → `/disponibilidad` vacío; `POST /citas` → **422**.
-- **Frontend**: panel admin (TabHorario) sección "Días cerrados"; calendario del cliente deshabilita las fechas cerradas.
-- ⚠️ **Zona horaria**: el chequeo de "día cerrado" usa Europe/Madrid e IDÉNTICO en `/disponibilidad` y `POST /citas`.
-
+ 
+Fechas concretas cerradas sin tocar el horario semanal; tienen prioridad sobre él.
+- Modelo `ExcepcionFecha` (solo fecha, sin motivo, discriminador `tipo` = "cerrado", extensible a horarios especiales en el futuro).
+- Endpoints admin: listar, añadir, eliminar. Añadir con citas activas en esa fecha → 409 con el conteo.
+- Endpoint cliente: fechas cerradas dentro de la ventana.
+- Fecha cerrada → `/disponibilidad` vacío; `POST /citas` → 422. Chequeo en Europe/Madrid, idéntico en ambos.
 ---
-
+ 
+## Ubicaciones: Alcalá la Real / Granada (NUEVO — Fase E)
+ 
+- Dos ciudades: `alcala` ("Alcalá la Real") y `granada` ("Granada"). Lista centralizada en una constante en backend y en frontend.
+- Agenda, horario, servicios y precios **únicos** para las dos.
+- `POST /citas` recibe `ubicacion` **obligatoria** (422 si falta o no es válida).
+- **Alcalá la Real** tiene local fijo: al elegirla se muestra su dirección (`DIRECCION_ALCALA`, una sola constante; valor pendiente de que lo dé Molina: `[dirección de Alcalá la Real]`). **Granada** no tiene dirección fija: se muestra un texto indicando que el peluquero contactará por Instagram para concretar.
+- La reprogramación **mantiene la ciudad** (igual que el servicio, no se cambia).
+- Migración Alembic: `cita.ubicacion` NOT NULL, con backfill `'alcala'` para las citas existentes (hasta ahora todas eran en Alcalá).
+- Visible en: Mis citas, agenda del admin, avisos de Telegram y resumen diario.
+---
+ 
+## Instagram del cliente (NUEVO — Fase E)
+ 
+- **Obligatorio en todas las reservas** (decisión de Molina, que asume el riesgo de que algún cliente no quiera darlo o no tenga Instagram). En BD es nullable (las cuentas existentes no lo tienen), pero `POST /citas` devuelve 422 si al final de la reserva el cliente no tiene Instagram (ni guardado ni enviado en el body).
+- Se guarda normalizado (sin `@`, en minúsculas) y validado con las reglas de Instagram: 1–30 caracteres; letras, números, `.` y `_`; sin `..`; no empieza ni acaba en `.`.
+- En la reserva aparece **precargado** si ya lo tiene; si lo cambia, se actualiza el perfil. Si se envía en `POST /citas`, se guarda en el perfil **en la misma transacción** que la cita. El `cliente_id` sigue saliendo del token.
+- Editable en "Mi cuenta" (`PATCH /usuarios/me`: añadir a la whitelist).
+- Visible para el admin en la agenda y en la pestaña Clientes, como enlace `https://instagram.com/<usuario>`.
+- Va en los avisos de Telegram (con enlace). Si el mensaje usa `parse_mode`, escapar el usuario (`_` y `.` pueden romper el formato).
+- RGPD: incluirlo en la exportación (`GET /usuarios/me/datos`), ponerlo a NULL al anonimizar (`DELETE /usuarios/me`) y añadirlo a "datos recogidos" de la política de privacidad como **obligatorio para reservar**, con su finalidad (canal de contacto del peluquero con el cliente). Ojo: pedirlo obligatorio teniendo ya el teléfono choca con el principio de minimización; la justificación la asume el titular.
+---
+ 
 ## Notificaciones al peluquero (Telegram)
-
-Avisos al peluquero por Telegram (nunca al cliente, en V1). `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en variables de entorno; si faltan, no se envía nada. Los fallos de Telegram se silencian/registran y **nunca rompen** la operación.
-
-1. **Avisos instantáneos** (dentro de la petición, en `BackgroundTasks`, tras confirmar la transacción): cuando un cliente **reserva** (`POST /citas`), **cancela** (`PATCH /citas/{id}/cancelar`, solo si cancela el cliente) o **reprograma** (`PATCH /citas/{id}/reprogramar`). Mensaje conciso: nombre, teléfono, servicio, fecha y hora, acción. En la reprogramación, indicar **de** (fecha/hora antigua) **a** (nueva).
-2. **Recordatorio diario** (proceso programado): **todos los días a las 22:00 (Europe/Madrid)**, un **resumen de las citas del día siguiente**. Se envía **SIEMPRE**, haya o no citas. Detalles:
-   - Lo ejecuta un **Render Cron Job** (`scripts/recordatorio_diario.py`), schedule `0 20 * * *` (20:00 UTC = 22:00 Madrid en horario de verano/CEST).
-   - "Mañana" = hoy + 1 día, con **hoy en Europe/Madrid** (NO depender de la hora del cron, que corre en UTC).
-   - Selecciona citas `estado=activa`, `fecha == mañana`, ordenadas por hora. Envía UN mensaje:
-     - Si NO hay citas → texto indicándolo (p. ej. "Mañana DD/MM no tienes citas").
-     - Si hay → la lista, cada línea con **hora y nombre del cliente** (p. ej. "10:00 — Juan Pérez").
-   - **Idempotencia por horario fijo**: una sola ejecución al día. NO se usa campo en BD (un disparo manual de prueba reenviaría, lo cual es esperable).
-   - ⚠️ El `schedule` de Render Cron es **UTC**; con DST la hora local variará ±1 h (en invierno/CET sería 21:00 Madrid). El piloto es en verano → cae exactamente a las 22:00. "Mañana" se calcula en Madrid, así que la fecha siempre es correcta.
-
+ 
+Solo al peluquero (nunca al cliente, en V1). `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID` en variables de entorno; si faltan, no se envía nada.
+ 
+1. **Avisos instantáneos**: envío **síncrono, tras el commit**, con timeout de 3 s (`TELEGRAM_TIMEOUT_SEGUNDOS`). Los fallos se registran sin datos personales ni token y **nunca rompen** la operación. Se avisa cuando un cliente **reserva**, **cancela** (solo si cancela el cliente) o **reprograma** (indicando de → a). Mensaje: nombre, teléfono, servicio, fecha y hora, **ciudad**, **Instagram** (si lo hay) y acción.
+2. **Recordatorio diario**: `GET /cron/recordatorio`, llamado por Vercel Cron con schedule `0 20 * * *` (UTC). En Hobby la precisión es de ±59 min: 21:00–21:59 Madrid en invierno y 22:00–22:59 en verano. "Mañana" se calcula en Europe/Madrid. Se envía SIEMPRE: sin citas → "Mañana DD/MM no tienes citas"; con citas → una línea por cita con hora, nombre, **ciudad**, Instagram y **enlace de recordatorio por WhatsApp** (ver punto 3). Entrega "best effort" (posibles duplicados u omisiones).
+3. **Recordatorios a clientes por WhatsApp (gratis, semiautomáticos — Fase F)**: en cada línea del resumen diario va un enlace `https://wa.me/<telefono>?text=<mensaje>` (teléfono en formato internacional sin `+`, mensaje URL-encoded). El peluquero lo pulsa, se abre WhatsApp con el mensaje ya escrito y él le da a enviar: la app **no envía nada a los clientes**. Mensaje: saludo con el nombre, "te recuerdo tu cita de mañana DD/MM a las HH:MM", ciudad (+ `DIRECCION_ALCALA` si es Alcalá) y firma "RM Molina Style". Solo el recordatorio, sin promociones. Si el teléfono no es válido, la línea va sin enlace. Si el resumen supera el límite de 4096 caracteres de Telegram, dividirlo en varios mensajes. Nunca usar bots no oficiales de WhatsApp (incumplen sus términos y pueden bloquear el número).
+Endpoints `/cron/*`: protegidos con `Authorization: Bearer <CRON_SECRET>` (comparación en tiempo constante; 401 si no coincide; 404 si falta `CRON_SECRET`), con `include_in_schema=False`. La lógica está en `app/tareas/`; los scripts de `scripts/` siguen funcionando por línea de comandos.
+ 
 ---
-
+ 
+## Purga de citas (RGPD)
+ 
+`GET /cron/purga`, diario (`0 3 * * *` UTC). Borra las citas más antiguas que `RETENCION_MESES` (por defecto 24). Idempotente. Aritmética de meses robusta (29 de febrero). El contador de inasistencias está almacenado en `Usuario`, así que la purga no lo altera.
+ 
+---
+ 
+## Email de reactivación "¡Te echamos de menos en RM Molina Style!" (NUEVO — Fase G)
+ 
+Email a clientes que llevan `DIAS_REACTIVACION = 28` días (constante configurable) sin cita.
+ 
+- **Es comunicación comercial (LSSI-CE art. 21)**: solo se envía a clientes con `acepta_comunicaciones = true`.
+  - Registro: checkbox **separado** del de privacidad, **no premarcado** ("Quiero recibir por email avisos y novedades de RM").
+  - Mi cuenta: interruptor para activarlo o desactivarlo.
+  - Se guarda `comunicaciones_fecha` al aceptar.
+  - Las cuentas existentes quedan en `false`: no reciben nada hasta que lo activen.
+- **Baja en un clic** en cada email: enlace con token firmado (HMAC con `SECRET_KEY` y propósito "baja", sin caducidad corta), sin login, que pone `acepta_comunicaciones = false` y muestra una página de confirmación. Añadir también la cabecera `List-Unsubscribe`.
+- **Proveedor**: **Brevo** (plan gratis: 300 emails/día, empresa de la UE). API key en `BREVO_API_KEY`; remitente en `EMAIL_REMITENTE` (p. ej. `hola@rmolinastyle.com`, pendiente de confirmar); reply-to pendiente de confirmar. Autenticar el dominio en Brevo (registros SPF/DKIM/DMARC en Cloudflare). Envío síncrono con timeout; un fallo de un email no para el resto.
+- **Cron**: `GET /cron/reactivacion`, diario (p. ej. `0 9 * * *` UTC → 10:00–10:59 Madrid en invierno), protegido con `CRON_SECRET` como los demás. Tope de envíos por ejecución (p. ej. 50) muy por debajo del límite de Brevo.
+- **A quién**: rol cliente, no bloqueado, no anonimizado, `acepta_comunicaciones = true`, con al menos una cita pasada no cancelada, cuya última cita fue hace ≥ `DIAS_REACTIVACION` días, **sin citas futuras activas**, y que no haya recibido ya el email desde su última cita (`ultimo_email_reactivacion` es NULL o anterior a la fecha de esa cita). Así recibe **un solo email por periodo de inactividad**, no uno al día. Al enviar, se actualiza `ultimo_email_reactivacion`.
+- **Contenido**: texto corto con el nombre, enlace para reservar (`https://rmolinastyle.com`) y enlace de baja. Sin datos de citas.
+- RGPD: añadir Brevo como encargado (UE) y la finalidad "comunicaciones comerciales, solo con consentimiento" en la política de privacidad; incluir `acepta_comunicaciones` en la exportación.
+---
+ 
 ## Cancelación
-
-`PATCH /citas/{id}/cancelar`: estado -> 'cancelada' Y borra sus franjas (libera huecos), en una transacción. Solo dueño o admin. No se cancela una pasada ni una ya cancelada.
-
+ 
+`PATCH /citas/{id}/cancelar`: estado → 'cancelada' y borra sus franjas, en una transacción. Solo dueño o admin. No se cancela una pasada ni una ya cancelada.
+ 
 ---
-
+ 
 ## Reprogramación (cambiar fecha/hora sin cancelar)
-
-`PATCH /citas/{id}/reprogramar` con body `{fecha, hora_inicio}` (**mismo servicio**, no se cambia). Solo **dueño o admin**, y solo citas **activas y futuras**.
-
-- **Antelación mínima: 24 h.** No se puede reprogramar si faltan menos de 24 h para la cita ORIGINAL (con "ahora" en Europe/Madrid) → 422. Motivo: un cambio el mismo día perjudica al barbero; si es tan pegado, que cancele o la asuma.
-- El nuevo hueco debe cumplir **TODAS las reglas de reserva**, igual que un `POST /citas`: dentro de horario, dentro de la ventana de 30 días, no en día cerrado, cliente no bloqueado, y **sin solape**.
-- **Operación transaccional**: borrar las franjas viejas + crear las nuevas + actualizar `fecha`/`hora_inicio`/`hora_fin` de la cita, todo en UNA transacción. Si el hueco nuevo se ocupa a la vez → `IntegrityError` → rollback → **409** (la cita se queda intacta en su fecha original).
-- Errores: 403 (bloqueado / no es su cita), 404, 409 (hueco ocupado), 422 (pasada / <24 h / fuera de ventana / día cerrado / fuera de horario).
-- Avisa al barbero por Telegram ("cita reprogramada: de … a …").
-
-- `PATCH /citas/{id}/no-asistida`, solo admin: marca una cita PASADA y 'activa' como 'no_asistida'. No futuras, no canceladas, no ya marcadas. La marca es manual; la app no puede saber quién asistió.
-- Contador de inasistencias por cliente: visible para el admin (campo `Usuario.inasistencias`).
-- Veto: campo `bloqueado` en Usuario, controlado por el admin. Si `bloqueado`, `POST /citas` devuelve 403. El cobro de inasistencias es presencial.
-
+ 
+`PATCH /citas/{id}/reprogramar` con body `{fecha, hora_inicio}`. **Mismo servicio y misma ciudad.** Solo dueño o admin, y solo citas activas y futuras.
+- Antelación mínima: 24 h respecto a la cita original ("ahora" en Europe/Madrid) → 422.
+- El hueco nuevo cumple todas las reglas de reserva (horario, ventana, día cerrado, cliente no bloqueado, sin solape).
+- Transacción: borrar franjas viejas + crear nuevas + actualizar la cita. Si el hueco se ocupa a la vez → 409 y la cita queda intacta.
+- Errores: 403, 404, 409, 422. Aviso a Telegram ("de … a …").
+## Inasistencias y bloqueo
+ 
+- `PATCH /citas/{id}/no-asistida` (solo admin): marca una cita pasada y activa como 'no_asistida'. Marca manual.
+- `Usuario.inasistencias` visible para el admin.
+- `bloqueado` (controlado por el admin): si está bloqueado, `POST /citas` → 403. El cobro de inasistencias es presencial.
 ---
-
-## Estados de cita y su VISUALIZACIÓN (derivada — no hay paso de "confirmar")
-
-El peluquero solo marca inasistencias; nunca confirma citas. La etiqueta mostrada se DERIVA de `estado` + fecha:
-- 'activa' y futura -> "Reservada" / "Próxima".
-- 'activa' y pasada (no marcada) -> "Realizada" (derivado: si no se marcó como inasistencia, se asume que vino).
-- 'no_asistida' -> "No asistió".
-- 'cancelada' -> "Cancelada".
+ 
+## Estados de cita y su VISUALIZACIÓN (derivada — no hay "confirmar")
+ 
+- 'activa' y futura → "Reservada" / "Próxima".
+- 'activa' y pasada → "Realizada".
+- 'no_asistida' → "No asistió".
+- 'cancelada' → "Cancelada".
 NO usar nunca la etiqueta "Confirmada".
-
 ---
-
-## Fuera de alcance en V1
-
-- Pagos online (pago presencial). V2.
-- Recordatorios WhatsApp/SMS al cliente. V2. (El recordatorio diario de V1 es solo al peluquero por Telegram.)
-- Verificación del teléfono por SMS (OTP). V2 si hay abuso.
-- Tiempo real / actualización en vivo.
-- Horarios especiales por fecha (un día con tramos distintos a los semanales): previsto a futuro; el modelo de ExcepcionFecha se diseña para soportarlo, pero NO se implementa todavía.
-
+ 
+## Fuera de alcance por ahora
+ 
+- Pagos online (pago presencial).
+- Envío automático de WhatsApp o SMS a clientes (de pago). Los recordatorios son semiautomáticos (ver Telegram, punto 3).
+- **Reserva como invitado** (futuro próximo, sin diseñar): reservar sin cuenta, con limitaciones (sin historial, sin recordatorios, sin emails). Cuestiones abiertas: datos mínimos (nombre, teléfono, Instagram), cómo cancelar sin cuenta (enlace con token), antiabuso (rate limit por IP / captcha), consentimiento de privacidad en la propia reserva, retención de esos datos y cómo encaja con `Cita.cliente_id`.
+- Verificación del teléfono por SMS.
+- Tiempo real.
+- Horarios especiales por fecha (el modelo `ExcepcionFecha` ya lo permite, sin implementar).
+- Horario o servicios distintos por ciudad (no hacen falta: agenda única).
 ---
-
+ 
 ## Seguridad (OWASP Top 10:2025)
-
+ 
 - Control de acceso por objeto en cada endpoint (anti-IDOR). Panel admin protegido con `solo_admin` en el backend.
-- `cliente_id` de una cita se toma del token, nunca del body (anti mass-assignment).
-- Validación Pydantic estricta en todo endpoint (422 si inválido). SQLAlchemy ORM parametrizado (anti SQLi).
-- HTTPS forzado (Render), HSTS y cabeceras de seguridad. JWT en cabecera (mitiga CSRF). React escapa por defecto (anti XSS); nunca dangerouslySetInnerHTML.
-- Rate limiting: /login y /registro estricto por IP (~5/min); POST /citas por usuario (~5-10/min + tope diario).
-- No filtrar stack traces (500 genérico). No registrar datos personales ni contraseñas. RGPD/LOPDGDD: minimización y derecho de borrado/anonimización.
-
+- `cliente_id` se toma del token, nunca del body (anti mass-assignment). Whitelists estrictas en `PATCH /usuarios/me`.
+- Validación Pydantic estricta (422). SQLAlchemy ORM parametrizado.
+- HTTPS. Backend con cabeceras de seguridad (HSTS, CSP, X-Frame-Options, nosniff, Referrer-Policy). Frontend con cabeceras en `frontend/vercel.json` (HSTS, X-Frame-Options DENY, Referrer-Policy, nosniff, CSP sin `unsafe-inline`). **Nada de scripts inline**: el script del tema está en `public/tema-init.js`. React escapa por defecto; nunca `dangerouslySetInnerHTML`.
+- Rate limiting: `/login` y `/registro` estricto por IP (~5/min); `POST /citas` por usuario. En serverless es "best effort".
+- No filtrar stack traces (500 genérico). No registrar datos personales, contraseñas ni tokens.
 ---
-
+ 
 ## Cumplimiento legal (RGPD, LOPDGDD, LSSI-CE — España)
-
-**Páginas legales** (rutas públicas, accesibles sin login, enlazadas desde un footer presente en TODAS las páginas). **Estructura con placeholders `[…]`, no texto legal definitivo** (lo aporta el titular / un profesional):
-- `/aviso-legal`: identifica al titular — `[nombre/razón social]`, `[NIF]`, `[dirección física]`, `[email de contacto]`.
-- `/politica-privacidad`: responsable (el negocio); encargados (desarrollador/hosting **Render – Frankfurt/UE**, **Cloudflare**); datos recogidos (nombre, email, teléfono, historial de citas); finalidad (gestión de reservas y avisos); base legal (ejecución de contrato y/o consentimiento); destinatarios/terceros (**Telegram — transferencia internacional fuera de la UE**; hosting UE); plazo de conservación; derechos (acceso, rectificación, supresión, oposición, portabilidad, limitación) y cómo ejercerlos; reclamación ante la **AEPD**; transferencias internacionales (Telegram).
-- `/politica-cookies`: documenta el almacenamiento **técnico** (JWT en `localStorage`, exento de consentimiento). **RM no usa cookies no esenciales ni analítica** → **NO hay banner de cookies** (montarlo sin nada que consentir sería incorrecto). Si algún día se añade analítica, entonces sí: banner con **aceptar/rechazar al mismo nivel**, sin cargar nada antes del consentimiento, granular y sin muros.
-
-**Consentimiento en el registro** (LSSI/RGPD): checkbox **NO premarcado** con enlace a `/politica-privacidad` y texto de consentimiento explícito; el registro no se envía si no está marcado. **Prueba en BD**: `Usuario` guarda `consentimiento_version` (str) y `consentimiento_fecha` (timestamp) del texto aceptado. (La reserva de cita **no** lleva checkbox: es ejecución de contrato.)
-
-**Derechos RGPD (endpoints de autoservicio, usuario autenticado)**:
-- **Exportar**: `GET /usuarios/me/datos` → todos sus datos (perfil + historial de citas) en JSON (portabilidad/acceso).
-- **Suprimir**: `DELETE /usuarios/me` → **ANONIMIZA** (no borra la fila): sustituye `nombre_completo`/`email`/`telefono`/`password_hash` por valores anonimizados irreversibles (p. ej. `email = anon_{id}@…`), marca la cuenta inutilizable y cancela sus citas futuras. Conserva el historial anonimizado (sin datos personales) → evita romper FKs y mantiene estadística. NO aplicable a cuentas admin.
-
-**Seguridad de datos (ya cumplido, verificar)**: contraseñas con bcrypt; HTTPS+HSTS; minimización; backups de la Postgres gestionada; acceso a BD restringido (`ipAllowList: []`).
-
-- **Mobile-first y responsiva** (uso principal en móvil).
-- **Footer** presente en TODAS las páginas (aparece al hacer scroll), con enlaces a `/aviso-legal`, `/politica-privacidad` y `/politica-cookies` (rutas públicas). Estética integrada con la web (negro/oro).
-- **Registro**: incluye un checkbox de consentimiento NO premarcado, con enlace a `/politica-privacidad`; el botón de registro no se activa/envía sin marcarlo.
-- AuthContext (login/logout/usuario+rol). Rutas protegidas por rol (público / cliente / admin). Cliente HTTP centralizado con Bearer automático y manejo central de 401 (cerrar sesión -> login) y 409 ("ese hueco se acaba de ocupar, recarga").
-- **Dos dashboards distintos**: cliente y admin.
-- Pantallas: Login, Registro (nombre, apellidos, teléfono, email, contraseña), Reservar (mostrar solo horas válidas del servicio; **calendario limitado a la ventana [hoy, hoy+30 días] y con los días cerrados deshabilitados**), Mis citas (con cancelar y **reprogramar** — reutiliza el selector calendario+horas de Reservar, precargado con el servicio de la cita; botón visible solo si faltan ≥24 h), Panel admin (agenda con estados derivados, marcar inasistencia, gestión de servicios y horario, **días cerrados**, bloquear clientes).
-- **Crear servicio (admin)**: desplegable de duración de **30 min a 5 h en pasos de 30 min** (30, 60, 90, …, 300).
-- **Formateo de duración**: mostrar bien duraciones largas con media hora: "30 min", "1 h", "1 h 30 min", "2 h 30 min", "5 h", etc.
-
+ 
+**Páginas legales** (públicas, enlazadas desde un footer en TODAS las páginas), con marcadores `[…]` que rellena el titular o un profesional:
+- `/aviso-legal`: titular, NIF, dirección, email de contacto.
+- `/politica-privacidad`: responsable (el negocio); encargados: **Vercel Inc.** (alojamiento y ejecución, funciones en Frankfurt; empresa de EE. UU. → transferencia internacional, mecanismo pendiente `[…]`), **Neon** (BD, Frankfurt/UE), **Cloudflare** (DNS), **Telegram** (transferencia fuera de la UE), **Brevo** (envío de emails, UE — Fase G); datos recogidos (nombre, email, teléfono, historial de citas, ciudad de la cita, **Instagram, obligatorio para reservar**); finalidades (gestión de reservas y avisos; contacto del peluquero por Instagram/WhatsApp; comunicaciones comerciales **solo con consentimiento**); base legal; plazo de conservación; derechos y cómo ejercerlos; reclamación ante la AEPD.
+- `/politica-cookies`: solo almacenamiento técnico (JWT en `localStorage`) → **sin banner de cookies**. Si algún día se añade analítica: banner con aceptar/rechazar al mismo nivel, sin cargar nada antes del consentimiento.
+**Consentimiento en el registro**: checkbox NO premarcado con enlace a la política de privacidad; se guarda `consentimiento_version` y `consentimiento_fecha`. La reserva no lleva checkbox (ejecución de contrato).
+ 
+**Comunicaciones comerciales** (Fase G): consentimiento aparte, con checkbox no premarcado e independiente del de privacidad (el registro funciona sin marcarlo). Se puede retirar en Mi cuenta o con el enlace de baja de cada email.
+ 
+**Derechos RGPD (autoservicio)**:
+- Exportar: `GET /usuarios/me/datos` (perfil + historial, JSON).
+- Suprimir: `DELETE /usuarios/me` → ANONIMIZA (no borra la fila): datos personales sustituidos por valores irreversibles, cuenta inutilizable, citas futuras canceladas. No aplicable a admins.
+---
+ 
+## Frontend
+ 
+- Mobile-first y responsiva. Footer en todas las páginas.
+- AuthContext (login/logout/usuario+rol, rehidratación vía `/usuarios/me`). Rutas protegidas por rol. Cliente HTTP centralizado con Bearer automático, 401 (logout → login) y 409 ("ese hueco se acaba de ocupar, recarga").
+- `VITE_API_URL` = `https://api.rmolinastyle.com` en producción (se lee en build: cambiarla exige redeploy).
+- **Dos dashboards**: cliente y admin.
+- Pantallas:
+  - Login, Registro (nombre, apellidos, teléfono, email, contraseña, consentimiento de privacidad y, aparte y opcional, consentimiento de comunicaciones — Fase G).
+  - **Reservar**: **ciudad (Alcalá la Real / Granada)**, mostrando la dirección si es Alcalá o el aviso de contacto por Instagram si es Granada → servicio → calendario (ventana [hoy, hoy+30], días cerrados deshabilitados) → horas válidas → **Instagram, obligatorio** (precargado del perfil, con un texto que explique para qué se usa) → resumen (con ciudad y dirección) + confirmar.
+  - Mis citas (con ciudad; cancelar y reprogramar, este último solo si faltan ≥ 24 h).
+  - Mi cuenta (nombre, teléfono, **Instagram**, contraseña y, en la Fase G, el interruptor de comunicaciones).
+  - Página pública de baja de comunicaciones (Fase G), a la que lleva el enlace de cada email.
+  - Panel admin: agenda (con ciudad e Instagram de cada cita), marcar inasistencia, servicios, horario, días cerrados, clientes (con Instagram; bloquear/desbloquear).
+- Crear servicio (admin): desplegable de duración de 30 min a 5 h en pasos de 30 min.
+- Formato de duración: "30 min", "1 h", "1 h 30 min", "5 h".
 ### Diseño visual (estética premium, paleta de la marca RM)
-- Estética elegante/premium en **negro y oro**, con **modo claro y oscuro**.
-- **Tamaño de letra**: escala tipográfica algo amplia para buena legibilidad (cuerpo ~17-18px). Inputs y cuerpo **nunca por debajo de 16px** en móvil (accesibilidad / evita el zoom de iOS). Escala parametrizada en variables CSS de `theme.css` (no hardcodear tamaños por componente).
-- **Logo**: usar la imagen del logo RM (no texto). Versión con **fondo transparente** (PNG/SVG). Favicon: monograma "RM" dorado sobre fondo oscuro (set completo SVG + PNG + apple-touch-icon + site.webmanifest).
-- Tipografía con un toque serif para la marca/títulos (Cormorant Garamond); sans para el resto (Inter). Self-hosted (RGPD).
-- **Micro-interacciones**: transiciones suaves, `:hover` en botones, animaciones de entrada sencillas. Con mesura y cuidando el rendimiento en móvil; respetar `prefers-reduced-motion`.
-
-Paleta de referencia:
+- Negro y oro, modo claro y oscuro (manual, por defecto oscuro).
+- Cuerpo ~17-18px; inputs y cuerpo nunca por debajo de 16px en móvil. Escala en variables CSS de `theme.css`.
+- Logo: imagen RM con fondo transparente. Favicon: monograma "RM" dorado sobre oscuro (SVG + PNG + apple-touch-icon + webmanifest).
+- Cormorant Garamond (títulos) + Inter (resto), self-hosted (RGPD).
+- Micro-interacciones con mesura, solo `transform`/`opacity`, respetando `prefers-reduced-motion`.
+Paleta:
 - Oscuro: fondo #0B0B0C, superficie #161618, texto crema #F2ECDD, texto sec. #9A958A.
 - Claro: fondo #FBF8F1, superficie #FFFFFF, texto carbón #1A1814, texto sec. #6E665C.
 - Oro: principal #D4B35A, brillante #EBC76C, oscuro (sobre claro) #9C7A2A / #B8923A.
 - Semánticos: verde #3B6D11 / #EAF3DE, ámbar #854F0B / #FAEEDA, rojo #A32D2D / #FCEBEB.
-
 ---
-
+ 
 ## Cómo trabajar (Claude Code)
-
+ 
 - Plan Mode primero: propón el plan, espera aprobación, luego codifica.
 - Fases pequeñas y verificables. Tests pytest por endpoint. Nunca secretos en el código. Si algo no está claro, pregunta antes de inventar.
+- Trabaja en la rama `feature/*` que se indique; nunca en `render`.
+- Si hay migración Alembic, recuerda que en producción se aplica a mano contra Neon (URL directa) antes de desplegar el código que la usa.
