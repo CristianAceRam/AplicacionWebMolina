@@ -7,9 +7,8 @@ export const UBICACIONES = [
 
 export const NOMBRE_UBICACION = Object.fromEntries(UBICACIONES.map(u => [u.id, u.nombre]))
 
-// ⚠️ PENDIENTE: dirección exacta del local de Alcalá la Real (la da Molina).
-// Única constante con la dirección; revisarla en la checklist de merge antes de producción.
-export const DIRECCION_ALCALA = '[dirección de Alcalá la Real]'
+// Dirección del local de Alcalá la Real (dada por Molina). Única constante con la dirección.
+export const DIRECCION_ALCALA = 'C/Camino Nuevo Nº 11'
 
 // Granada no tiene local fijo.
 export const TEXTO_GRANADA =
