@@ -55,6 +55,16 @@
   flex-shrink: 0;
 }
 
+/* Ciudad de la cita (+ dirección si es Alcalá y está pendiente) */
+.citaUbicacion {
+  font-size: var(--text-sm);
+  color: var(--c-text);
+}
+
+.citaDireccion {
+  color: var(--c-text-sec);
+}
+
 /* ── Etiquetas de estado ─────────────────────────────────────────────────── */
 .etiqueta {
   display: inline-block;

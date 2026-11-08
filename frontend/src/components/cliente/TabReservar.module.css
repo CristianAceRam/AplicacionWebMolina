@@ -118,6 +118,17 @@
   flex-shrink: 0;
 }
 
+.resumenValor {
+  text-align: right;
+}
+
+/* ── Texto explicativo (para qué se usa el Instagram) ─────────────────────── */
+.explicacion {
+  font-size: var(--text-sm);
+  color: var(--c-text-sec);
+  line-height: 1.5;
+}
+
 /* ── Mensajes ─────────────────────────────────────────────────────────────── */
 .errorMsg {
   background: var(--c-error-bg);

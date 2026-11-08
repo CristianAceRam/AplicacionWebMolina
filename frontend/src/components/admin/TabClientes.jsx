@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import client from '../../api/client'
 import Spinner from '../ui/Spinner'
+import { urlInstagram } from '../../utils/instagram'
 import styles from './TabClientes.module.css'
 
 export default function TabClientes() {
@@ -80,6 +81,19 @@ export default function TabClientes() {
               <a href={`tel:${c.telefono}`} className={styles.tel}>{c.telefono}</a>
               <span className={styles.sep}>·</span>
               <span className={styles.email}>{c.email}</span>
+              {c.instagram && (
+                <>
+                  <span className={styles.sep}>·</span>
+                  <a
+                    href={urlInstagram(c.instagram)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.tel}
+                  >
+                    @{c.instagram}
+                  </a>
+                </>
+              )}
             </div>
 
             {!modalAbierto && (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import client from '../../api/client'
 import Spinner from '../ui/Spinner'
 import { capitalizar } from '../../utils/texto'
+import { DIRECCION_ALCALA, NOMBRE_UBICACION } from '../../constants/ubicaciones'
 import Calendario from './Calendario'
 import styles from './TabMisCitas.module.css'
 
@@ -222,6 +223,14 @@ export default function TabMisCitas({ serviciosMap, diasAbiertos = new Set(), fe
               <span className={styles.separador}>·</span>
               <span>{formatDuracion(duracion)}</span>
             </div>
+            {cita.ubicacion && (
+              <p className={styles.citaUbicacion}>
+                {NOMBRE_UBICACION[cita.ubicacion] ?? cita.ubicacion}
+                {cita.ubicacion === 'alcala' && puedeCancelar && (
+                  <span className={styles.citaDireccion}> — {DIRECCION_ALCALA}</span>
+                )}
+              </p>
+            )}
 
             {/* Botones de acción (solo si no hay modal abierto) */}
             {!modalAbierto && !reprogAbierto && (puedeCancelar || puedeReprogramar) && (
@@ -292,6 +301,7 @@ export default function TabMisCitas({ serviciosMap, diasAbiertos = new Set(), fe
               >
                 <p className={styles.servicioFijo}>
                   {nombre} · {formatDuracionMin(servicio ? servicio.duracion_minutos : duracion)}
+                  {cita.ubicacion && ` · ${NOMBRE_UBICACION[cita.ubicacion] ?? cita.ubicacion}`}
                 </p>
 
                 <Calendario

@@ -174,6 +174,12 @@
   color: var(--c-text-sec);
 }
 
+/* Ciudad de la cita: destacada, el peluquero la necesita de un vistazo */
+.citaUbicacion {
+  color: var(--c-text);
+  font-weight: 500;
+}
+
 /* ── Etiquetas de estado ─────────────────────────────────────────────────── */
 .etiqueta {
   display: inline-block;

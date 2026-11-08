@@ -2,6 +2,8 @@ import { useState } from 'react'
 import client from '../../api/client'
 import Spinner from '../ui/Spinner'
 import Calendario from '../cliente/Calendario'
+import { NOMBRE_UBICACION } from '../../constants/ubicaciones'
+import { urlInstagram } from '../../utils/instagram'
 import styles from './TabAgenda.module.css'
 
 function fechaAString(d) {
@@ -176,10 +178,28 @@ export default function TabAgenda({ citas, clientesMap, serviciosMap, fecha, onF
                       {cliente.telefono}
                     </a>
                   )}
+                  {cliente?.instagram && (
+                    <a
+                      href={urlInstagram(cliente.instagram)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.citaTel}
+                    >
+                      @{cliente.instagram}
+                    </a>
+                  )}
                 </div>
 
-                {servicio && (
-                  <span className={styles.citaServicio}>{servicio.nombre}</span>
+                {(servicio || cita.ubicacion) && (
+                  <span className={styles.citaServicio}>
+                    {servicio?.nombre}
+                    {servicio && cita.ubicacion && ' · '}
+                    {cita.ubicacion && (
+                      <span className={styles.citaUbicacion}>
+                        {NOMBRE_UBICACION[cita.ubicacion] ?? cita.ubicacion}
+                      </span>
+                    )}
+                  </span>
                 )}
 
                 {!modalAbierto && (puedeNoAsistida || puedeCancelar) && (
