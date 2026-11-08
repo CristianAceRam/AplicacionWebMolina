@@ -53,7 +53,7 @@ Registro de cliente (`POST /registro`, solo crea rol cliente; el rol nunca se ac
 - `nombre_completo`: obligatorio. Al menos nombre y apellido (mínimo dos palabras), solo letras/espacios/guiones/acentos.
 - `telefono`: obligatorio, formato España, normalizado. Sirve para **contactar** al cliente.
 - `email`: obligatorio, válido y único.
-- `password`: obligatorio, mínimo 8 caracteres, hasheado con bcrypt (passlib). Nunca en texto plano.
+- `password`: obligatorio, mínimo 8 caracteres, hasheado con bcrypt directamente. Nunca en texto plano.
 - Checkbox de consentimiento no premarcado (ver "Cumplimiento legal").
 Dependencias de seguridad: `get_usuario_actual`, `solo_admin`.
  
