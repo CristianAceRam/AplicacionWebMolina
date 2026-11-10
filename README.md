@@ -87,7 +87,7 @@ Aplicación web de reservas para una peluquería/barbería real con un único pe
 | Frontend | React 19 · Vite · React Router · Axios · CSS Modules |
 | Base de datos | PostgreSQL 18 (Docker en local, Neon en producción) |
 | Tests | pytest (SQLite en memoria, sin necesidad de Docker) |
-| Hosting | Render (Frankfurt): Web Service + Static Site + PostgreSQL + Cron Job |
+| Hosting | **Vercel** en producción (frontend + backend serverless en Frankfurt, Vercel Cron) · **Render** como alternativa (ver [Despliegue](#despliegue)) |
 | DNS / dominio | Cloudflare |
 
 ---
@@ -96,19 +96,19 @@ Aplicación web de reservas para una peluquería/barbería real con un único pe
 
 **Cliente**
 - Registro con validación (nombre y apellido, teléfono, email) y consentimiento RGPD explícito.
-- Reserva: calendario limitado a **[hoy, hoy + 30 días]** que deshabilita los días cerrados. Solo muestra las horas de inicio en las que cabe el servicio entero.
-- Mis citas: cancelar y **reprogramar** (con al menos 24 h de antelación).
+- Reserva: ciudad (**Alcalá la Real** o **Granada**, con una sola agenda), servicio, calendario limitado a **[hoy, hoy + 30 días]** que deshabilita los días cerrados, y hora. Solo muestra las horas de inicio en las que cabe el servicio entero. Para reservar hace falta el **Instagram** del cliente.
+- Mis citas: con la ciudad de cada cita; cancelar y **reprogramar** (con al menos 24 h de antelación).
 - Mi cuenta: editar perfil, cambiar contraseña, **exportar mis datos** (JSON) y **eliminar la cuenta** (se anonimiza).
 
 **Administrador (peluquero)**
-- Agenda con estados derivados: *Próxima*, *Realizada*, *No asistió* y *Cancelada*.
+- Agenda con estados derivados (*Próxima*, *Realizada*, *No asistió* y *Cancelada*), y la ciudad y el Instagram de cada cita.
 - Marcar inasistencias; contador de inasistencias por cliente; bloquear y desbloquear clientes.
 - CRUD de servicios (de 30 min a 5 h, en pasos de 30 min; se desactivan en vez de borrarse).
 - Horario semanal con varios tramos por día (jornada partida) y **días cerrados** por fecha concreta.
 
 **Notificaciones (Telegram, solo al peluquero)**
 - Aviso instantáneo cuando un cliente reserva, cancela o reprograma.
-- Recordatorio diario a las 22:00 (Madrid) con las citas del día siguiente.
+- Resumen cada noche con las citas del día siguiente. El cron está programado a las 20:00 UTC; en Vercel Hobby llega dentro de esa hora, entre las 21:00 y las 21:59 de Madrid en invierno y entre las 22:00 y las 22:59 en verano.
 
 ---
 
@@ -138,22 +138,25 @@ El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](CLAUDE.m
 │   │   ├── dependencies.py    # get_usuario_actual, solo_admin
 │   │   ├── rate_limit.py
 │   │   ├── notificaciones/    # Telegram
-│   │   └── routers/           # auth, usuarios, servicios, horario, disponibilidad, citas, excepciones
+│   │   ├── tareas/            # Lógica del recordatorio diario y de la purga
+│   │   └── routers/           # auth, usuarios, servicios, horario, disponibilidad, citas, excepciones, cron
 │   ├── alembic/               # Migraciones
-│   ├── scripts/
-│   │   ├── recordatorio_diario.py   # Cron diario (Telegram)
+│   ├── scripts/               # Las mismas tareas por línea de comandos (el cron de Render las usa)
+│   │   ├── recordatorio_diario.py   # Resumen diario (Telegram)
 │   │   └── purga_citas.py           # Purga RGPD de citas antiguas
 │   ├── tests/                 # pytest
-│   └── seed.py                # Crea las 2 cuentas admin si no existen
+│   ├── seed.py                # Crea las 2 cuentas admin si no existen
+│   └── vercel.json            # Vercel: región fra1 y crons
 ├── frontend/
-│   └── src/
-│       ├── api/client.js      # Axios con Bearer automático y manejo central de 401/409
-│       ├── context/           # AuthContext, ThemeContext
-│       ├── pages/             # Login, Registro, DashboardCliente, PanelAdmin, MiCuenta, páginas legales
-│       ├── components/        # admin/, cliente/, cuenta/, layout/, ui/
-│       └── styles/theme.css   # Paleta negro/oro, modo claro/oscuro, escala tipográfica
-├── docker-compose.yaml        # PostgreSQL local
-└── render.yaml                # Infraestructura de Render (Blueprint)
+│   ├── src/
+│   │   ├── api/client.js      # Axios con Bearer automático y manejo central de 401/409
+│   │   ├── context/           # AuthContext, ThemeContext
+│   │   ├── pages/             # Login, Registro, DashboardCliente, PanelAdmin, MiCuenta, páginas legales
+│   │   ├── components/        # admin/, cliente/, cuenta/, layout/, ui/
+│   │   └── styles/theme.css   # Paleta negro/oro, modo claro/oscuro, escala tipográfica
+│   └── vercel.json            # Vercel: rewrite SPA y cabeceras de seguridad (CSP)
+├── docker-compose.yaml        # PostgreSQL 18 local
+└── render.yaml                # Render: infraestructura como Blueprint (despliegue alternativo)
 ```
 
 ---
@@ -162,7 +165,7 @@ El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](CLAUDE.m
 
 ### Requisitos
 
-- Python 3.12+
+- Python 3.14 (la misma versión que en Vercel, fijada en `backend/.python-version`)
 - Node.js 20+
 - Docker (para PostgreSQL)
 
@@ -218,15 +221,18 @@ La app queda en `http://localhost:5173`. En desarrollo, Vite redirige `/api/*` a
 
 | Variable | Obligatoria | Descripción |
 |---|---|---|
-| `DATABASE_URL` | ✅ | `postgresql+psycopg://…`. Si llega `postgres://` (como la inyecta Render), se normaliza sola. |
+| `DATABASE_URL` | ✅ | `postgresql+psycopg://…`. Si llega `postgres://` (Render) o `postgresql://` (Neon), se normaliza sola. En Vercel, la URL **pooled** de Neon; para migraciones, la **directa**. |
 | `SECRET_KEY` | ✅ | Firma de los JWT. Genérala con `openssl rand -hex 32`. |
 | `ALGORITHM` | | Por defecto `HS256`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | | Por defecto `10080` (7 días). |
 | `ALLOWED_ORIGINS` | | Array JSON, p. ej. `["http://localhost:5173"]`. |
 | `ENVIRONMENT` | | `development` o `production`. En producción se desactivan `/docs` y `/openapi.json` y se activa HSTS. |
-| `RETENCION_MESES` | | Ventana de retención para `purga_citas.py` (por defecto `24`). |
+| `RETENCION_MESES` | | Meses que se conservan las citas antes de la purga (por defecto `24`). |
+| `DB_NULLPOOL` | | `true` en Vercel: sin pool de conexiones, para que Neon pueda escalar a cero. En local y en Render, `false` (por defecto). |
+| `CRON_SECRET` | | Protege `/cron/*` (solo Vercel). Si falta, esos endpoints responden 404. |
 | `ADMIN1_*`, `ADMIN2_*` | Para el seed | `EMAIL`, `PASSWORD`, `NOMBRE` y `TELEFONO` de las dos cuentas admin. La contraseña solo se usa al crear la cuenta. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | | Si faltan, no se envía ningún aviso y la app sigue funcionando. |
+| `VERCEL`, `RENDER` | — | Las pone la propia plataforma (no hay que crearlas). Sirven para saber de qué cabeceras tomar la IP del cliente para el rate limiting. |
 
 **Frontend** (`frontend/.env`):
 
@@ -266,12 +272,12 @@ npm run lint
 | `PATCH` | `/usuarios/me/password` | Autenticado |
 | `GET` | `/usuarios`, `/usuarios/{id}` | Admin |
 | `PATCH` | `/usuarios/{id}/bloquear`, `/usuarios/{id}/desbloquear` | Admin |
-| `GET` | `/servicios`, `/servicios/{id}` | Público |
+| `GET` | `/servicios`, `/servicios/{id}` | Autenticado (los inactivos, solo admin) |
 | `POST` · `PUT` · `DELETE` | `/servicios[/{id}]` | Admin |
-| `GET` | `/horario` | Público |
+| `GET` | `/horario` | Autenticado |
 | `POST` · `PUT` · `DELETE` | `/horario[/{id}]` | Admin |
-| `GET` | `/disponibilidad?fecha=&servicio_id=` | Público |
-| `GET` | `/excepciones/proximas` | Público |
+| `GET` | `/disponibilidad?fecha=&servicio_id=` | Autenticado |
+| `GET` | `/excepciones/proximas` | Autenticado |
 | `GET` · `POST` · `DELETE` | `/excepciones[/{id}]` | Admin |
 | `POST` | `/citas` | Cliente (10/min y 50/día por usuario) |
 | `GET` | `/citas/mias` | Cliente |
@@ -279,7 +285,8 @@ npm run lint
 | `GET` | `/citas/{id}` | Dueño o admin |
 | `PATCH` | `/citas/{id}/cancelar`, `/citas/{id}/reprogramar` | Dueño o admin |
 | `PATCH` | `/citas/{id}/no-asistida` | Admin |
-| `GET` | `/health` | Público |
+| `GET` | `/health` | Público (no toca la BD) |
+| `GET` | `/cron/recordatorio`, `/cron/purga` | Solo Vercel Cron (`Authorization: Bearer <CRON_SECRET>`) |
 
 Con el backend en local, la especificación completa está en `/docs`.
 
@@ -287,21 +294,38 @@ Con el backend en local, la especificación completa está en `/docs`.
 
 ## Despliegue
 
-La infraestructura está declarada en [`render.yaml`](render.yaml) (Blueprint de Render, región Frankfurt):
+Hay **dos formas de desplegar** el proyecto, y las dos están preparadas en el repositorio:
 
-| Servicio | Tipo | Detalles |
+- **Vercel + Neon**: la que se usa en producción. Se eligió **a petición del dueño del negocio (el peluquero)**, para que el coste fuera prácticamente cero.
+- **Render**: la alternativa. Fue la producción hasta el 8 de noviembre de 2026.
+
+El código es el mismo en las dos. Detecta en qué plataforma se ejecuta por las variables que pone ella misma (`VERCEL=1` o `RENDER=true`).
+
+| | **Vercel + Neon** (producción) | **Render** (alternativa) |
 |---|---|---|
-| `rm-backend` | Web Service (Starter) | Pre-deploy: `alembic upgrade head && python seed.py` · health check en `/health` |
-| `rm-frontend` | Static Site | `npm run build` → `dist/`, con rewrite SPA a `index.html` |
-| `rm-postgres` | PostgreSQL gestionada | Backups diarios · `ipAllowList: []` (solo acceso interno) |
-| `rm-recordatorios` | Cron Job | `0 20 * * *` (UTC) → `python scripts/recordatorio_diario.py` |
+| Frontend | Proyecto Vercel con raíz `frontend/` (estático, Vite) | Static Site `rm-frontend` |
+| Backend | Proyecto Vercel con raíz `backend/` (FastAPI serverless, región `fra1`) | Web Service `rm-backend` (uvicorn, Starter) |
+| Base de datos | Neon Free, Postgres 18 (Frankfurt) | PostgreSQL gestionada `rm-postgres` (Frankfurt, backups diarios) |
+| Tareas programadas | Vercel Cron → `/cron/recordatorio` (`0 20 * * *` UTC) y `/cron/purga` (`0 3 * * *` UTC) | Cron Job `rm-recordatorios` → `python scripts/recordatorio_diario.py` (`0 20 * * *` UTC) |
+| Migraciones | **A mano**, contra la URL directa de Neon, antes del merge a `main` | Automáticas en el pre-deploy: `alembic upgrade head && python seed.py` |
+| Configuración | [`backend/vercel.json`](backend/vercel.json) y [`frontend/vercel.json`](frontend/vercel.json) | [`render.yaml`](render.yaml) (Blueprint) |
+| Coste aproximado | 0 € (más el dominio) | ~18,50 €/mes |
+| Guía | [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md) | [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md) |
 
-Ten en cuenta que:
+**Vercel + Neon (producción):**
+- `main` se despliega solo en Vercel con cada push. Las variables con secretos (`DATABASE_URL`, `TELEGRAM_*` y `CRON_SECRET`) están solo en el entorno *Production*, para que las previews de otras ramas no toquen la BD real ni avisen al peluquero.
+- El backend es serverless: abre conexiones sin pool (`DB_NULLPOOL=true`), no hace trabajo después de responder y `/health` no toca la BD.
+- Vercel no tiene paso de pre-deploy, así que las migraciones se aplican a mano. Ver §3 de [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md).
+- En el plan Hobby, el cron se ejecuta en algún momento dentro de la hora programada.
+
+**Render (alternativa):**
+- La versión que estuvo desplegada en Render está en la rama `render` y en el tag `render-v1`.
 - Los secretos con `sync: false` se introducen a mano en el panel de Render **de cada servicio**. El cron necesita sus propios `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`.
-- El `schedule` del cron está en UTC: `20:00 UTC` son las 22:00 en Madrid en horario de verano y las 21:00 en invierno.
+- `render.yaml` solo programa el recordatorio. La purga se lanza a mano (`python scripts/purga_citas.py`) o añadiendo un segundo Cron Job.
 - Si una migración endurece una restricción (`CHECK`, `UNIQUE`…), corrige antes los datos que la incumplan. Si no, el pre-deploy falla.
+- No se ha vuelto a desplegar en Render desde el cambio a Vercel. Si se retoma, hay que probarlo antes y pasar los datos desde Neon con `pg_dump`/`pg_restore`.
 
-El paso a paso está en [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md).
+> ⚠️ Solo una de las dos debe estar activa a la vez. Con las dos, el peluquero recibiría dos resúmenes cada noche y las reservas quedarían repartidas entre dos bases de datos distintas.
 
 ---
 
@@ -315,7 +339,7 @@ El paso a paso está en [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md).
   - Páginas `/aviso-legal`, `/politica-privacidad` y `/politica-cookies`, enlazadas desde el footer.
   - Consentimiento con versión y fecha guardadas en la BD.
   - Exportación de datos y anonimización de la cuenta.
-  - Purga de citas antiguas con `scripts/purga_citas.py [--dry-run]`.
+  - Purga de citas antiguas: cron diario `/cron/purga` en Vercel, o `scripts/purga_citas.py [--dry-run]` por línea de comandos.
   - Solo se usa almacenamiento técnico (el JWT en `localStorage`), así que no hace falta banner de cookies.
   - Las fuentes están alojadas en el propio servidor.
 
@@ -327,7 +351,8 @@ El paso a paso está en [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md).
 
 - [`CLAUDE.md`](CLAUDE.md): especificación y decisiones de diseño (fuente de verdad).
 - [`ESTADO_PROYECTO.md`](ESTADO_PROYECTO.md): estado actual, incidentes y tareas pendientes.
-- [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md): guía de despliegue.
+- [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md): despliegue en Vercel + Neon (producción).
+- [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md): despliegue en Render (alternativa).
 - [`TUNEL_LOCAL.md`](TUNEL_LOCAL.md): demo local con un túnel de Cloudflare.
 
 ---

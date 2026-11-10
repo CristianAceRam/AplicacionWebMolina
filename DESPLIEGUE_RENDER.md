@@ -1,5 +1,16 @@
 # Plan de despliegue en Render — Gestor de Citas RM
 
+> **Forma de despliegue alternativa.** El proyecto se puede desplegar de dos formas: Vercel + Neon y Render. Producción está en **Vercel + Neon desde el 8 de noviembre de 2026**, **a petición del dueño del negocio (el peluquero)**, para que el coste fuera prácticamente cero; ver [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md). Render fue la producción hasta esa fecha. La versión que estuvo desplegada está en la rama `render` y en el tag `render-v1`.
+>
+> Si se vuelve a desplegar en Render con el código actual de `main`:
+> - Render define `RENDER=true` y el backend toma la IP del cliente como antes. No hacen falta `DB_NULLPOOL` (el servidor es persistente) ni `CRON_SECRET`: los endpoints `/cron/*` se quedan desactivados y el recordatorio lo lanza el Cron Job `rm-recordatorios` con `scripts/recordatorio_diario.py`.
+> - `render.yaml` no programa la purga RGPD. Lánzala a mano (`python scripts/purga_citas.py`) o añade un segundo Cron Job.
+> - Los datos de producción están en Neon. Para llevarlos a Render: `pg_dump` desde la URL directa de Neon y `pg_restore` en `rm-postgres`, con la imagen `postgres:18`. Ver "Rollback" en `ESTADO_PROYECTO.md`.
+> - No se ha vuelto a desplegar en Render desde el cambio: pruébalo antes de mover los dominios.
+> - **Nunca las dos plataformas activas a la vez**: habría dos resúmenes cada noche y dos bases de datos con datos distintos.
+>
+> Lo que sigue es el runbook original del primer despliegue en Render.
+
 > Runbook paso a paso. Tres piezas en Render: **PostgreSQL gestionada**, **backend** (Web Service) y **frontend** (static site), con **dominio propio `rmolinastyle.com`**.
 >
 > **Estrategia recomendada (a prueba de sustos):** primero despliega y verifica todo con las URLs por defecto de Render (`.onrender.com`); cuando funcione de punta a punta, añade el dominio propio y el DNS, y al final cambias las URLs a las definitivas. Así separas "¿falla el código?" de "¿falla el DNS?".

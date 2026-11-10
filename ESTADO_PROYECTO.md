@@ -1,6 +1,6 @@
 # Estado del proyecto — Gestor de Citas Peluquería RM
  
-> Documento de continuidad. Léelo junto a `CLAUDE.md` para retomar el proyecto en cualquier chat nuevo. Última actualización: 8 de noviembre de 2026.
+> Documento de continuidad. Léelo junto a `CLAUDE.md` para retomar el proyecto en cualquier chat nuevo. Última actualización: 10 de noviembre de 2026.
  
 ## Qué es
  
@@ -8,10 +8,16 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
  
 ---
  
-## Situación actual (8 de noviembre de 2026)
+## Situación actual (10 de noviembre de 2026)
  
+- **Dos formas de despliegue** preparadas en el repo, con el mismo código:
+  - **Vercel + Neon**: la de producción. Se usa **a petición de Molina, dueño del negocio**, por coste (~0 €). Guía en `DESPLIEGUE_VERCEL.md`.
+  - **Render**: la alternativa. `render.yaml` + `DESPLIEGUE_RENDER.md`; la versión que estuvo en producción está en la rama `render` y en el tag `render-v1`.
+
+  Comparación en la sección "Despliegue" del `README.md`. Nunca las dos activas a la vez.
 - **Producción en Vercel Hobby + Neon Free desde el 8 de noviembre de 2026** (corte hecho un domingo, con la peluquería cerrada). Verificado: HTTPS, `www` → apex con 308, login de admin y de cliente, datos migrados, reservar/cancelar, recarga sin 404, cabeceras de seguridad, CSP sin errores, `/health` 200, `/cron/recordatorio` sin cabecera → 401.
 - **Fase E (ciudad de la cita + Instagram obligatorio) en producción desde el 8 de noviembre de 2026**: migración `e5f6a1b2c3d4` aplicada a mano en Neon (URL directa) antes del merge — 230 citas rellenadas con `alcala`, ninguna sin ciudad, `CHECK` creado — y merge fast-forward de `feature/ubicacion-instagram` a `main` (`2212f88`). Ver "Despliegue de la Fase E" más abajo.
+- **`citas.ubicacion` sin DEFAULT desde el 10 de noviembre de 2026**: migración `f6a1b2c3d4e5` (`ALTER COLUMN ubicacion DROP DEFAULT`) aplicada a mano en Neon (URL directa) y merge fast-forward de `chore/ubicacion-sin-default` a `main` (`fd0f78d`). Antes se probó en Docker el ciclo upgrade → downgrade → upgrade: sin DEFAULT, un `INSERT` sin ciudad falla con `NotNullViolation`; tras el downgrade vuelve a rellenarse con `'alcala'`. `alembic check` sin diferencias. Ahora una cita sin ciudad falla en vez de quedarse en Alcalá sin avisar.
 - **Pendiente de confirmar**:
   - Que a Molina le llegaron los avisos de Telegram de la reserva y cancelación de prueba del corte. Si no: revisar los logs del backend en Vercel y que `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` sean idénticos a los de Render (sin espacios), y redeploy.
   - Que el resumen diario de la noche del 8 de noviembre (21:00–21:59) le llega → el cron de Vercel funciona.
@@ -21,7 +27,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Las cuentas de Vercel y Neon son de Cristian** (misma identidad que su GitHub). Si Vercel actuara por el uso comercial en Hobby, afectaría a la cuenta personal de Cristian y a sus otros proyectos.
 ### Infraestructura de producción
  
-- **Neon**: proyecto `rm-production`, AWS Europe Central 1 (Frankfurt), **Postgres 18** (misma versión que tenía Render). Ojo con los nombres: el **proyecto** se llama `rm-production`, pero la **base de datos** dentro de él es `rm_postgres` (rol `rm_postgres_owner`); es la misma BD de producción. URLs pooled y directa en el gestor de contraseñas. Alembic en **`e5f6a1b2c3d4 (head)`** (Fase E). `citas.ubicacion` tiene un `DEFAULT 'alcala'` **temporal** (ver Pendientes).
+- **Neon**: proyecto `rm-production`, AWS Europe Central 1 (Frankfurt), **Postgres 18** (misma versión que tenía Render). Ojo con los nombres: el **proyecto** se llama `rm-production`, pero la **base de datos** dentro de él es `rm_postgres` (rol `rm_postgres_owner`); es la misma BD de producción. URLs pooled y directa en el gestor de contraseñas. Alembic en **`f6a1b2c3d4e5 (head)`** (10 nov 2026). `citas.ubicacion` es NOT NULL y ya **sin DEFAULT**.
 - **Vercel backend**: proyecto `aplicacion-web-molina` (raíz `backend/`), dominio `api.rmolinastyle.com` (también responde en `aplicacion-web-molina.vercel.app`). Python 3.14. Variables (solo Production): `DATABASE_URL` (pooled), `DB_NULLPOOL=true`, `SECRET_KEY` (la de Render), `ENVIRONMENT=production`, `ALLOWED_ORIGINS=["https://rmolinastyle.com","https://www.rmolinastyle.com"]` (**array JSON**: el campo es `list[str]` en pydantic-settings), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET`.
 - **Vercel frontend**: proyecto `aplicacion-web-molina-frontend` (raíz `frontend/`), dominios `rmolinastyle.com` (principal) y `www.rmolinastyle.com` (308 al apex). `VITE_API_URL=https://api.rmolinastyle.com`, de tipo **Config** (no sensible: todo lo que lleva `VITE_` acaba en el JS del navegador; nunca poner secretos ahí). `connect-src` de la CSP solo con `https://api.rmolinastyle.com`.
 - **Cloudflare**: los 3 registros (`rmolinastyle.com`, `www`, `api`) apuntan a Vercel, en "DNS only" (nube gris; con proxy naranja el rate limiting de `/login` vería la IP de Cloudflare). Sin registros CAA.
@@ -63,6 +69,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 10. Zona horaria unificada en Europe/Madrid en todos los endpoints (corrigió un bug en producción). `CheckConstraint` de duración de servicio.
 11. Migración a Vercel + Neon: `NullPool`/`prepare_threshold=None`, `/health` sin BD, Telegram síncrono tras el commit (timeout 3 s), crons como endpoints `/cron/recordatorio` y `/cron/purga` con `CRON_SECRET` (la purga se programa por primera vez), IP real desde cabeceras de Vercel para el rate limiting, `tzdata`, `backend/vercel.json` (región `fra1`, 2 crons), Python 3.14.
 12. **Fase E — ciudad de la cita + Instagram obligatorio**: enum `Ubicacion` (`alcala`/`granada`) y `NOMBRES_UBICACION` en `app/constants.py`; `Cita.ubicacion` (NOT NULL + `CHECK`) y `Usuario.instagram` (nullable); validador único de Instagram en `app/schemas.py` (normaliza sin `@` y en minúsculas; 1–30 caracteres, letras/números/`.`/`_`, sin `..` ni `.` al principio o al final) usado por `POST /citas` y `PATCH /usuarios/me`. `POST /citas` exige ciudad y, si el perfil no tiene Instagram, que llegue en el body (422 si no); el Instagram del body se guarda en el perfil **en la misma transacción** que la cita (un 409 no lo guarda). La reprogramación mantiene la ciudad. `PATCH /usuarios/me` permite cambiar el Instagram pero no vaciarlo. Exportación con Instagram y ciudad; anonimizar pone Instagram a NULL. Telegram: ciudad e Instagram (enlace) en avisos y resumen diario, texto plano sin `parse_mode` y con `link_preview_options.is_disabled` en todos los envíos. **260 tests** en verde.
+13. **Retirada del DEFAULT temporal de `citas.ubicacion`** (10 nov 2026): migración `f6a1b2c3d4e5`, con un `downgrade` que lo restaura. El modelo ya no lo tenía. Docker local pasado a `postgres:18`, la misma versión que Neon.
 ### Frontend
 - Fase A: cimientos (axios con interceptores 401/409, AuthContext, rutas por rol).
 - Fase B: Login y Registro con estética premium negro/oro, tema claro/oscuro, fuentes self-hosted.
@@ -88,9 +95,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Montar el `pg_dump` periódico de Neon** (frecuencia y dónde guardarlo cifrado, por decidir).
 - **Corregir `DESPLIEGUE_VERCEL.md`** en el repo: Render tenía Postgres **18** (no 16) → imagen `postgres:18`; la cuenta de Vercel es la de Cristian; suspender `rm-recordatorios` al principio del corte; `VITE_API_URL` de tipo Config. Convertirlo en documentación de la producción actual más que en runbook de migración.
 - Política de privacidad: mecanismo de transferencia de Vercel (`[…]`), y los nuevos marcadores de la Fase E (justificación de pedir Instagram obligatorio —minimización— y transferencia de Meta). Los rellena Molina o un profesional.
-- **Retirar el `DEFAULT 'alcala'` de `citas.ubicacion`** en una migración nueva (`ALTER COLUMN ubicacion DROP DEFAULT`), en otra rama, ahora que el código nuevo está en producción. Así una cita sin ciudad fallará en vez de quedarse en Alcalá en silencio.
 - Dependencias: FastAPI 0.115.5 / Starlette / slowapi usan `asyncio.iscoroutinefunction`, deprecado en Python 3.14 (~580 warnings en pytest; se elimina en 3.16). Fase aparte de actualización (en Starlette moderno `HTTP_422_UNPROCESSABLE_ENTITY` pasa a ser `HTTP_422_UNPROCESSABLE_CONTENT`).
-- `README.md` dice que `GET /servicios` es público, pero requiere token (el código es correcto; corregir el README).
 - 17 errores previos de `npm run lint`.
 - Probar `python scripts/purga_citas.py --dry-run` con Docker levantado.
 ---
@@ -146,7 +151,7 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
 - Avisos al peluquero por Telegram. Recordatorios a clientes por WhatsApp, enviados a mano por Molina desde los enlaces del resumen (gratis).
 - Instagram obligatorio para reservar (decisión de Molina). Emails comerciales solo con consentimiento explícito.
 - JavaScript (no TypeScript), axios, JWT en `localStorage`, CSS Modules + variables CSS, sin frameworks de UI.
-- Producción en Vercel Hobby + Neon Free a petición de Molina (coste ~0), asumiendo sus limitaciones. Cuentas de Vercel y Neon a nombre de Cristian.
+- Producción en Vercel Hobby + Neon Free a petición de Molina (coste ~0), asumiendo sus limitaciones. Cuentas de Vercel y Neon a nombre de Cristian. Render se mantiene en el repo como segunda forma de despliegue (`render.yaml` + `DESPLIEGUE_RENDER.md`).
 - Dominio principal: apex `rmolinastyle.com`; `www` redirige con 308.
 ## Herramienta de desarrollo — compartir en local
  
@@ -165,6 +170,6 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
  
 1. Confirmar con Molina los avisos de Telegram del corte y el resumen de la noche del 8 de noviembre (ya con ciudad e Instagram en cada línea).
 2. Verificar en producción la Fase E: reserva de prueba en Alcalá la Real y en Granada (recargando antes la página), ciudad en Mis citas y en la agenda, aviso de Telegram con ciudad e Instagram sin vista previa del enlace; cancelar las citas de prueba.
-3. Rama aparte: retirar el `DEFAULT 'alcala'` de `citas.ubicacion` (migración nueva, aplicar en Neon).
-4. Hacia el 10–11 de noviembre: borrar Render.
-5. Después: Fase F (mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, `pg_dump` periódico, README, dependencias).
+3. ~~Retirar el `DEFAULT 'alcala'` de `citas.ubicacion`~~ ✅ en producción el 10 nov 2026 (migración `f6a1b2c3d4e5`).
+4. Hacia el 10–11 de noviembre: borrar los servicios de Render. La configuración (`render.yaml`, `DESPLIEGUE_RENDER.md`) se queda en el repo como forma de despliegue alternativa.
+5. Después: Fase F (mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, `pg_dump` periódico, dependencias).

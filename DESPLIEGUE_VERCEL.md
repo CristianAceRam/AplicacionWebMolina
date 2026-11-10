@@ -1,5 +1,7 @@
 # Despliegue en Vercel + Neon — Gestor de Citas RM
 
+> **Es una de las dos formas de despliegue del proyecto, y la que se usa en producción desde el 8 de noviembre de 2026.** Se eligió **a petición del dueño del negocio (el peluquero)**, para que el coste fuera prácticamente cero. La otra forma, Render, sigue preparada como alternativa: [`render.yaml`](render.yaml) y [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md). La comparación está en la sección "Despliegue" del [`README.md`](README.md).
+
 > Runbook de la migración de producción desde Render a **Vercel Hobby** (2 proyectos) + **Neon Free**, todo en **Frankfurt**. Los dominios no cambian: frontend en `rmolinastyle.com` y API en `api.rmolinastyle.com`.
 >
 > **Render no se borra.** `render.yaml`, `seed.py` y `DESPLIEGUE_RENDER.md` siguen en el repo y los servicios de Render se suspenden (no se eliminan) hasta pasado el periodo de rollback. El commit previo a la migración está etiquetado como **`render-v1`**.
@@ -71,7 +73,8 @@ DATABASE_URL="<URL DIRECTA de Neon, sin -pooler, con ?sslmode=require>" alembic 
 ```
 
 - La variable del shell tiene prioridad sobre tu `backend/.env` (que solo aporta el resto, p. ej. `SECRET_KEY`).
-- `alembic current` con la misma URL muestra en qué revisión está la BD. Head actual: **`d4e5f6a1b2c3`**.
+- `alembic current` con la misma URL muestra en qué revisión está la BD. Head actual: **`f6a1b2c3d4e5`** (aplicada en Neon el 10 de noviembre de 2026).
+- Para que no se quede en el historial de PowerShell, mete la URL con `$env:DATABASE_URL = Read-Host "URL directa de Neon"` en lugar de escribirla en el comando.
 - Recordatorio (ver `ESTADO_PROYECTO.md`): si una migración **endurece** una restricción (`CHECK`, `UNIQUE`…), corrige antes los datos que la incumplan.
 - **No hace falta `seed.py`**: los dos admins vienen en los datos migrados desde Render.
 
