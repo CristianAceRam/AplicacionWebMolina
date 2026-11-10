@@ -128,8 +128,8 @@ class Cita(Base):
                       default=EstadoCita.activa,
                   )
     # Ciudad de la cita. No afecta a la disponibilidad (agenda única).
-    # Sin default en el modelo: el código siempre la indica. (La BD tiene un
-    # DEFAULT 'alcala' temporal solo para convivir con el código anterior.)
+    # Sin default ni en el modelo ni en la BD: el código siempre la indica, y
+    # una cita sin ciudad falla con NOT NULL (no se asume Alcalá en silencio).
     ubicacion   : Mapped[Ubicacion]  = mapped_column(
                       SAEnum(Ubicacion, native_enum=False, length=10),
                       nullable=False,
