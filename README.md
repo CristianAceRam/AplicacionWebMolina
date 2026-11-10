@@ -119,7 +119,7 @@ Aplicación web de reservas para una peluquería/barbería real con un único pe
 - **Zona horaria.** "Hoy", "mañana" y "ahora" se calculan siempre en `Europe/Madrid` y de la misma forma en todos los endpoints.
 - **Estados de cita:** `activa`, `cancelada` y `no_asistida`. La etiqueta que se muestra depende del estado y de la fecha. No existe el estado "confirmada".
 
-El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](CLAUDE.md).
+El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](Archivos.md/CLAUDE.md).
 
 ---
 
@@ -127,6 +127,8 @@ El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](CLAUDE.m
 
 ```
 .
+├── Archivos.md/               # Documentación: CLAUDE.md, ESTADO_PROYECTO.md, DESPLIEGUE_VERCEL.md, DESPLIEGUE_RENDER.md
+├── CLAUDE.md                  # Solo importa Archivos.md/CLAUDE.md (para que Claude Code lo cargue al arrancar)
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # App FastAPI, middlewares (CORS, cabeceras de seguridad), routers
@@ -310,12 +312,12 @@ El código es el mismo en las dos. Detecta en qué plataforma se ejecuta por las
 | Migraciones | **A mano**, contra la URL directa de Neon, antes del merge a `main` | Automáticas en el pre-deploy: `alembic upgrade head && python seed.py` |
 | Configuración | [`backend/vercel.json`](backend/vercel.json) y [`frontend/vercel.json`](frontend/vercel.json) | [`render.yaml`](render.yaml) (Blueprint) |
 | Coste aproximado | 0 € (más el dominio) | ~18,50 €/mes |
-| Guía | [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md) | [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md) |
+| Guía | [`DESPLIEGUE_VERCEL.md`](Archivos.md/DESPLIEGUE_VERCEL.md) | [`DESPLIEGUE_RENDER.md`](Archivos.md/DESPLIEGUE_RENDER.md) |
 
 **Vercel + Neon (producción):**
 - `main` se despliega solo en Vercel con cada push. Las variables con secretos (`DATABASE_URL`, `TELEGRAM_*` y `CRON_SECRET`) están solo en el entorno *Production*, para que las previews de otras ramas no toquen la BD real ni avisen al peluquero.
 - El backend es serverless: abre conexiones sin pool (`DB_NULLPOOL=true`), no hace trabajo después de responder y `/health` no toca la BD.
-- Vercel no tiene paso de pre-deploy, así que las migraciones se aplican a mano. Ver §3 de [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md).
+- Vercel no tiene paso de pre-deploy, así que las migraciones se aplican a mano. Ver §3 de [`DESPLIEGUE_VERCEL.md`](Archivos.md/DESPLIEGUE_VERCEL.md).
 - En el plan Hobby, el cron se ejecuta en algún momento dentro de la hora programada.
 
 **Render (alternativa):**
@@ -349,10 +351,10 @@ El código es el mismo en las dos. Detecta en qué plataforma se ejecuta por las
 
 ## Documentación adicional
 
-- [`CLAUDE.md`](CLAUDE.md): especificación y decisiones de diseño (fuente de verdad).
-- [`ESTADO_PROYECTO.md`](ESTADO_PROYECTO.md): estado actual, incidentes y tareas pendientes.
-- [`DESPLIEGUE_VERCEL.md`](DESPLIEGUE_VERCEL.md): despliegue en Vercel + Neon (producción).
-- [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md): despliegue en Render (alternativa).
+- [`CLAUDE.md`](Archivos.md/CLAUDE.md): especificación y decisiones de diseño (fuente de verdad).
+- [`ESTADO_PROYECTO.md`](Archivos.md/ESTADO_PROYECTO.md): estado actual, incidentes y tareas pendientes.
+- [`DESPLIEGUE_VERCEL.md`](Archivos.md/DESPLIEGUE_VERCEL.md): despliegue en Vercel + Neon (producción).
+- [`DESPLIEGUE_RENDER.md`](Archivos.md/DESPLIEGUE_RENDER.md): despliegue en Render (alternativa).
 - [`TUNEL_LOCAL.md`](TUNEL_LOCAL.md): demo local con un túnel de Cloudflare.
 
 ---

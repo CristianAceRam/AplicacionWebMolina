@@ -1,6 +1,6 @@
 # Despliegue en Vercel + Neon — Gestor de Citas RM
 
-> **Es una de las dos formas de despliegue del proyecto, y la que se usa en producción desde el 8 de noviembre de 2026.** Se eligió **a petición del dueño del negocio (el peluquero)**, para que el coste fuera prácticamente cero. La otra forma, Render, sigue preparada como alternativa: [`render.yaml`](render.yaml) y [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md). La comparación está en la sección "Despliegue" del [`README.md`](README.md).
+> **Es una de las dos formas de despliegue del proyecto, y la que se usa en producción desde el 8 de noviembre de 2026.** Se eligió **a petición del dueño del negocio (el peluquero)**, para que el coste fuera prácticamente cero. La otra forma, Render, sigue preparada como alternativa: [`render.yaml`](../render.yaml) y [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md). La comparación está en la sección "Despliegue" del [`README.md`](../README.md).
 
 > Runbook de la migración de producción desde Render a **Vercel Hobby** (2 proyectos) + **Neon Free**, todo en **Frankfurt**. Los dominios no cambian: frontend en `rmolinastyle.com` y API en `api.rmolinastyle.com`.
 >
@@ -12,8 +12,8 @@
 
 | Pieza | Dónde | Detalles |
 |---|---|---|
-| Frontend | Proyecto Vercel, Root Directory `frontend/` | Static site Vite (`npm run build` → `dist/`). Rewrite SPA y cabeceras de seguridad en [`frontend/vercel.json`](frontend/vercel.json). |
-| Backend | Proyecto Vercel, Root Directory `backend/` | FastAPI en el runtime de Python de Vercel. La app (`app` en `app/main.py`) se detecta sola. Región `fra1` y crons en [`backend/vercel.json`](backend/vercel.json). Python fijado en `backend/.python-version`. |
+| Frontend | Proyecto Vercel, Root Directory `frontend/` | Static site Vite (`npm run build` → `dist/`). Rewrite SPA y cabeceras de seguridad en [`frontend/vercel.json`](../frontend/vercel.json). |
+| Backend | Proyecto Vercel, Root Directory `backend/` | FastAPI en el runtime de Python de Vercel. La app (`app` en `app/main.py`) se detecta sola. Región `fra1` y crons en [`backend/vercel.json`](../backend/vercel.json). Python fijado en `backend/.python-version`. |
 | Base de datos | Neon Free, región AWS Europe Central (Frankfurt, `eu-central-1`) | La app usa la URL **pooled** (`-pooler`) con `DB_NULLPOOL=true`. Migraciones y dumps, con la URL **directa**. |
 | Crons | Vercel Cron (proyecto backend) | `GET /cron/recordatorio` y `GET /cron/purga`, protegidos con `CRON_SECRET`. |
 
@@ -82,7 +82,7 @@ DATABASE_URL="<URL DIRECTA de Neon, sin -pooler, con ?sslmode=require>" alembic 
 
 ## 4. Crons
 
-Definidos en [`backend/vercel.json`](backend/vercel.json) (horas en **UTC**):
+Definidos en [`backend/vercel.json`](../backend/vercel.json) (horas en **UTC**):
 
 | Ruta | Schedule | Qué hace |
 |---|---|---|
@@ -128,7 +128,7 @@ Los scripts siguen funcionando por CLI (desde `backend/`): `python scripts/recor
 3. Deploy.
 
 ### Marcador de la CSP (antes del primer deploy de pruebas)
-En [`frontend/vercel.json`](frontend/vercel.json), `connect-src` incluye un marcador:
+En [`frontend/vercel.json`](../frontend/vercel.json), `connect-src` incluye un marcador:
 
 ```
 connect-src https://api.rmolinastyle.com https://CAMBIAR-proyecto-backend.vercel.app
