@@ -67,10 +67,10 @@ Dependencias de seguridad: `get_usuario_actual`, `solo_admin`.
  
 ## Modelo de datos (basado en FRANJAS de 30 min)
  
-- **Usuario**: `id`, `email` (único), `password_hash`, `telefono`, `nombre_completo`, `rol` ('admin' | 'cliente'), `bloqueado` (bool), `inasistencias` (int, almacenado), `consentimiento_version`, `consentimiento_fecha`, **`instagram`** (str, nullable en BD pero obligatorio para reservar — NUEVO, Fase E), **`acepta_comunicaciones`** (bool, def. false), **`comunicaciones_fecha`** (timestamp, nullable), **`ultimo_email_reactivacion`** (timestamp, nullable) — los tres últimos NUEVOS, Fase G.
+- **Usuario**: `id`, `email` (único), `password_hash`, `telefono`, `nombre_completo`, `rol` ('admin' | 'cliente'), `bloqueado` (bool), `inasistencias` (int, almacenado), `consentimiento_version`, `consentimiento_fecha`, **`instagram`** (str, nullable en BD pero obligatorio para reservar — Fase E, en producción), **`acepta_comunicaciones`** (bool, def. false), **`comunicaciones_fecha`** (timestamp, nullable), **`ultimo_email_reactivacion`** (timestamp, nullable) — los tres últimos NUEVOS, Fase G.
 - **Servicio**: `id`, `nombre`, `duracion_minutos` (**múltiplo de 30, máximo 300 min = 5 h**), `precio`, `activo` (borrado lógico). **Mismos servicios y precios en las dos ciudades.**
 - **HorarioPeluquero**: tramos de apertura por día de la semana (varios tramos/día). Horario recurrente semanal, **único para las dos ciudades**.
-- **Cita**: `id`, `cliente_id`, `servicio_id`, `fecha`, `hora_inicio`, `hora_fin`, `estado` ('activa' | 'cancelada' | 'no_asistida'), **`ubicacion`** ('alcala' | 'granada', obligatoria — NUEVO, ver "Ubicaciones").
+- **Cita**: `id`, `cliente_id`, `servicio_id`, `fecha`, `hora_inicio`, `hora_fin`, `estado` ('activa' | 'cancelada' | 'no_asistida'), **`ubicacion`** ('alcala' | 'granada', obligatoria — Fase E, en producción, ver "Ubicaciones").
 - **FranjaOcupada**: `id`, `cita_id` (FK), `fecha`, `hora`. Fuente de verdad de la disponibilidad. Agenda única: una franja ocupada lo está para las dos ciudades.
 - **ExcepcionFecha** (días cerrados): excepción por fecha concreta, con prioridad sobre el horario semanal.
 **Tamaño de franja = 30 min**, centralizado en UNA constante (`FRANJA_MINUTOS = 30`) — nunca hardcodear. Nº de franjas = `duracion_minutos / FRANJA_MINUTOS`. Duración máxima = `DURACION_MAX_MINUTOS = 300`.
@@ -105,26 +105,33 @@ Fechas concretas cerradas sin tocar el horario semanal; tienen prioridad sobre �
 - Fecha cerrada → `/disponibilidad` vacío; `POST /citas` → 422. Chequeo en Europe/Madrid, idéntico en ambos.
 ---
  
-## Ubicaciones: Alcalá la Real / Granada (NUEVO — Fase E)
+## Ubicaciones: Alcalá la Real / Granada (Fase E — en producción desde el 8-nov-2026)
  
-- Dos ciudades: `alcala` ("Alcalá la Real") y `granada` ("Granada"). Lista centralizada en una constante en backend y en frontend.
+- Dos ciudades: `alcala` ("Alcalá la Real") y `granada` ("Granada"). Constantes:
+  - backend: enum `Ubicacion` en `app/models.py` y `NOMBRES_UBICACION` en `app/constants.py`;
+  - frontend: `src/constants/ubicaciones.js`.
 - Agenda, horario, servicios y precios **únicos** para las dos.
 - `POST /citas` recibe `ubicacion` **obligatoria** (422 si falta o no es válida).
-- **Alcalá la Real** tiene local fijo: al elegirla se muestra su dirección (`DIRECCION_ALCALA`, una sola constante; valor pendiente de que lo dé Molina: `[dirección de Alcalá la Real]`). **Granada** no tiene dirección fija: se muestra un texto indicando que el peluquero contactará por Instagram para concretar.
+- **Alcalá la Real** tiene local fijo: al elegirla se muestra su dirección, `DIRECCION_ALCALA = 'C/Camino Nuevo Nº 11'` (una sola constante).
+  - Hoy está solo en `frontend/src/constants/ubicaciones.js`.
+  - En la Fase F pasa al backend (`app/constants.py` + un endpoint público sin BD que la sirva al frontend), porque el mensaje de WhatsApp también la usa.
+- **Granada** no tiene dirección fija: se muestra un texto indicando que el peluquero contactará por Instagram para concretar.
 - La reprogramación **mantiene la ciudad** (igual que el servicio, no se cambia).
-- Migración Alembic: `cita.ubicacion` NOT NULL, con backfill `'alcala'` para las citas existentes (hasta ahora todas eran en Alcalá).
+- Migraciones (las dos aplicadas en Neon):
+  - `e5f6a1b2c3d4` añadió `citas.ubicacion` NOT NULL con backfill `'alcala'` y un DEFAULT temporal para convivir con el código anterior;
+  - `f6a1b2c3d4e5` retiró ese DEFAULT.
 - Visible en: Mis citas, agenda del admin, avisos de Telegram y resumen diario.
 ---
  
-## Instagram del cliente (NUEVO — Fase E)
+## Instagram del cliente (Fase E — en producción desde el 8-nov-2026)
  
 - **Obligatorio en todas las reservas** (decisión de Molina, que asume el riesgo de que algún cliente no quiera darlo o no tenga Instagram). En BD es nullable (las cuentas existentes no lo tienen), pero `POST /citas` devuelve 422 si al final de la reserva el cliente no tiene Instagram (ni guardado ni enviado en el body).
 - Se guarda normalizado (sin `@`, en minúsculas) y validado con las reglas de Instagram: 1–30 caracteres; letras, números, `.` y `_`; sin `..`; no empieza ni acaba en `.`.
 - En la reserva aparece **precargado** si ya lo tiene; si lo cambia, se actualiza el perfil. Si se envía en `POST /citas`, se guarda en el perfil **en la misma transacción** que la cita. El `cliente_id` sigue saliendo del token.
-- Editable en "Mi cuenta" (`PATCH /usuarios/me`: añadir a la whitelist).
+- Editable en "Mi cuenta" (`PATCH /usuarios/me`: está en la whitelist; se puede cambiar pero no vaciar).
 - Visible para el admin en la agenda y en la pestaña Clientes, como enlace `https://instagram.com/<usuario>`.
-- Va en los avisos de Telegram (con enlace). Si el mensaje usa `parse_mode`, escapar el usuario (`_` y `.` pueden romper el formato).
-- RGPD: incluirlo en la exportación (`GET /usuarios/me/datos`), ponerlo a NULL al anonimizar (`DELETE /usuarios/me`) y añadirlo a "datos recogidos" de la política de privacidad como **obligatorio para reservar**, con su finalidad (canal de contacto del peluquero con el cliente). Ojo: pedirlo obligatorio teniendo ya el teléfono choca con el principio de minimización; la justificación la asume el titular.
+- Va en los avisos de Telegram (con enlace), en texto plano, sin `parse_mode` y con la vista previa de enlaces desactivada. Si algún día se usa `parse_mode`, hay que escapar el usuario (`_` y `.` pueden romper el formato).
+- RGPD: está incluido en la exportación (`GET /usuarios/me/datos`), se pone a NULL al anonimizar (`DELETE /usuarios/me`) y figura en "datos recogidos" de la política de privacidad como **obligatorio para reservar**, con su finalidad (canal de contacto del peluquero con el cliente). Ojo: pedirlo obligatorio teniendo ya el teléfono choca con el principio de minimización; la justificación la asume el titular.
 ---
  
 ## Notificaciones al peluquero (Telegram)

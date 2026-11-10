@@ -15,12 +15,10 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
   - **Render**: la alternativa, solo como configuración en el repo (`render.yaml` + `DESPLIEGUE_RENDER.md`). **No hay nada desplegado en Render**: se borró el 10 de noviembre de 2026. Para usarlo habría que montarlo **desde cero** con `render.yaml` (Blueprint nuevo) y llevar los datos desde Neon con `pg_dump`/`pg_restore`. La versión que estuvo en producción está en la rama `render` y en el tag `render-v1`.
 
   Comparación en la sección "Despliegue" del `README.md`. Nunca las dos activas a la vez.
-- **Producción en Vercel Hobby + Neon Free desde el 8 de noviembre de 2026** (corte hecho un domingo, con la peluquería cerrada). Verificado: HTTPS, `www` → apex con 308, login de admin y de cliente, datos migrados, reservar/cancelar, recarga sin 404, cabeceras de seguridad, CSP sin errores, `/health` 200, `/cron/recordatorio` sin cabecera → 401.
+- **Producción en Vercel Hobby + Neon Free desde el 8 de noviembre de 2026** (corte hecho un domingo, con la peluquería cerrada). Verificado: HTTPS, `www` → apex con 308, login de admin y de cliente, datos migrados, reservar/cancelar, recarga sin 404, cabeceras de seguridad, CSP sin errores, `/health` 200, `/cron/recordatorio` sin cabecera → 401. **Confirmado el 10 nov**: el resumen diario de Telegram llega cada noche (el cron de Vercel funciona) y producción se mantiene estable.
 - **Fase E (ciudad de la cita + Instagram obligatorio) en producción desde el 8 de noviembre de 2026**: migración `e5f6a1b2c3d4` aplicada a mano en Neon (URL directa) antes del merge — 230 citas rellenadas con `alcala`, ninguna sin ciudad, `CHECK` creado — y merge fast-forward de `feature/ubicacion-instagram` a `main` (`2212f88`). Ver "Despliegue de la Fase E" más abajo.
 - **`citas.ubicacion` sin DEFAULT desde el 10 de noviembre de 2026**: migración `f6a1b2c3d4e5` (`ALTER COLUMN ubicacion DROP DEFAULT`) aplicada a mano en Neon (URL directa) y merge fast-forward de `chore/ubicacion-sin-default` a `main` (`fd0f78d`). Antes se probó en Docker el ciclo upgrade → downgrade → upgrade: sin DEFAULT, un `INSERT` sin ciudad falla con `NotNullViolation`; tras el downgrade vuelve a rellenarse con `'alcala'`. `alembic check` sin diferencias. Ahora una cita sin ciudad falla en vez de quedarse en Alcalá sin avisar.
-- **Pendiente de confirmar**:
-  - Que a Molina le llegaron los avisos de Telegram de la reserva y cancelación de prueba del corte. Si no: revisar los logs del backend en Vercel y que `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` sean idénticos a los de Render (sin espacios), y redeploy.
-  - Que el resumen diario de la noche del 8 de noviembre (21:00–21:59) le llega → el cron de Vercel funciona.
+- **Pendiente de confirmar**: reserva de prueba en producción en Alcalá la Real y en Granada (recargando antes la página), con su aviso de Telegram (ciudad + Instagram, sin vista previa del enlace); cancelar las citas de prueba.
 - **Render borrado el 10 de noviembre de 2026**: `rm-postgres`, `rm-backend`, `rm-recordatorios` y `rm-frontend` eliminados, y el Blueprint desconectado. Ya no hay rollback a Render.
 - **Backups de Neon**:
   - `pg_dump` **semanal** con un script propio que está **fuera del repo** (`backup-rm.ps1`).
@@ -89,7 +87,6 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
  
 ## Pendientes menores
  
-- **Corregir `DESPLIEGUE_VERCEL.md`** en el repo: Render tenía Postgres **18** (no 16) → imagen `postgres:18`; la cuenta de Vercel es la de Cristian; suspender `rm-recordatorios` al principio del corte; `VITE_API_URL` de tipo Config. Convertirlo en documentación de la producción actual más que en runbook de migración.
 - Política de privacidad: mecanismo de transferencia de Vercel (`[…]`), y los nuevos marcadores de la Fase E (justificación de pedir Instagram obligatorio —minimización— y transferencia de Meta). Los rellena Molina o un profesional.
 - Dependencias: FastAPI 0.115.5 / Starlette / slowapi usan `asyncio.iscoroutinefunction`, deprecado en Python 3.14 (~580 warnings en pytest; se elimina en 3.16). Fase aparte de actualización (en Starlette moderno `HTTP_422_UNPROCESSABLE_ENTITY` pasa a ser `HTTP_422_UNPROCESSABLE_CONTENT`).
 - 17 errores previos de `npm run lint`.
@@ -98,13 +95,14 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
  
 ## Próximas funciones (rama `feature/*` desde `main`)
  
-Se pueden empezar ya en su rama; **el merge a `main` (= despliegue a producción) cuando Vercel lleve unos días estable**. Todo está decidido con Molina; el detalle técnico está en `CLAUDE.md`. Una fase por rama y por chat. Las migraciones Alembic se aplican a mano en Neon (URL directa) **antes** del merge.
+Se pueden empezar ya en su rama. Todo está decidido con Molina; el detalle técnico está en `CLAUDE.md`. Una fase por rama y por chat. Las migraciones Alembic se aplican a mano en Neon (URL directa) **antes** del merge.
  
 ### ~~Fase E — Ciudad de la cita + Instagram obligatorio~~ ✅ en producción (8 nov 2026, ver "Completado")
 ### Fase F — Recordatorios a clientes por WhatsApp (`feature/recordatorio-whatsapp`)
 - Gratis y semiautomático: en el resumen diario de Telegram, cada cita lleva un enlace `wa.me` con el mensaje de recordatorio ya escrito. Molina lo pulsa y envía desde su WhatsApp. La app no envía nada a los clientes.
 - El mensaje lleva `DIRECCION_ALCALA`, que hoy solo está en el frontend (`src/constants/ubicaciones.js`): **moverla al backend** (p. ej. `app/constants.py` + un endpoint público sin BD que la sirva al frontend) para que siga siendo una sola constante.
 - A tener en cuenta: el resumen llega entre las 21:00 y las 22:59 según la época del año. Si a Molina le parece tarde para escribir a clientes, se adelanta el cron (decisión suya).
+- Con los enlaces `wa.me` el resumen crece: dividirlo si supera los 4096 caracteres de Telegram. La vista previa de enlaces ya está desactivada.
 ### Fase G — Email "¡Te echamos de menos!" (`feature/email-reactivacion`)
 - Email a clientes con 28 días sin cita, un solo email por periodo de inactividad. Gratis con **Brevo** (300 emails/día, empresa de la UE).
 - Es comunicación comercial: **solo a quien dé su consentimiento** (checkbox aparte y no premarcado en el registro + interruptor en Mi cuenta). Las cuentas existentes no reciben nada hasta que lo activen. Baja en un clic en cada email.
@@ -149,6 +147,7 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
 - JavaScript (no TypeScript), axios, JWT en `localStorage`, CSS Modules + variables CSS, sin frameworks de UI.
 - Producción en Vercel Hobby + Neon Free a petición de Molina (coste ~0), asumiendo sus limitaciones. Cuentas de Vercel y Neon a nombre de Cristian. Render se mantiene en el repo como segunda forma de despliegue (`render.yaml` + `DESPLIEGUE_RENDER.md`), pero sin nada desplegado: se borró el 10 nov 2026.
 - Dominio principal: apex `rmolinastyle.com`; `www` redirige con 308.
+- Documentos del proyecto de Claude (chat) actualizados a mano: al cerrar cada fase se suben las versiones del repo.
 ## Herramienta de desarrollo — compartir en local
  
 Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudflared tunnel --url http://localhost:5173` (si da errores QUIC: `--protocol http2` o desactivar la VPN). Solo para demos cortas; parar el túnel al terminar.
@@ -165,9 +164,9 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
  
 ## Siguiente paso
  
-1. Confirmar con Molina los avisos de Telegram del corte y el resumen de la noche del 8 de noviembre (ya con ciudad e Instagram en cada línea).
-2. Verificar en producción la Fase E: reserva de prueba en Alcalá la Real y en Granada (recargando antes la página), ciudad en Mis citas y en la agenda, aviso de Telegram con ciudad e Instagram sin vista previa del enlace; cancelar las citas de prueba.
+1. ~~Confirmar el resumen diario de Telegram con el cron de Vercel~~ ✅ 10 nov 2026.
+2. Reserva de prueba en producción en Alcalá la Real y en Granada (recargando antes la página), ciudad en Mis citas y en la agenda, aviso de Telegram con ciudad e Instagram sin vista previa del enlace; cancelar las citas de prueba.
 3. ~~Retirar el `DEFAULT 'alcala'` de `citas.ubicacion`~~ ✅ en producción el 10 nov 2026 (migración `f6a1b2c3d4e5`).
 4. ~~Borrar Render~~ ✅ 10 nov 2026 (servicios borrados y Blueprint desconectado). La configuración (`render.yaml`, `DESPLIEGUE_RENDER.md`) se queda en el repo como forma de despliegue alternativa.
 5. ~~`pg_dump` periódico de Neon~~ ✅ semanal con `backup-rm.ps1` desde el 10 nov 2026.
-6. Después: Fase F (mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, dependencias).
+6. **Fase F** en un chat nuevo (incluye mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (dependencias, lint, política de privacidad).
