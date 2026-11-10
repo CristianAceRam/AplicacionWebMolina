@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16
+    image: postgres:18
     container_name: peluqueria-db
     restart: unless-stopped
     environment:
@@ -10,7 +10,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - peluqueria_pgdata:/var/lib/postgresql/data
+      - peluqueria_pgdata:/var/lib/postgresql
 
 volumes:
   peluqueria_pgdata:
