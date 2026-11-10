@@ -154,8 +154,8 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
 
 ## Base de datos local (desarrollo)
 
-- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, `postgres:16`, `localhost:5432`, BD `peluqueria`). En la Fase E se migró a `e5f6a1b2c3d4` y se sembraron los 2 admins con `seed.py` (servicios, horario y clientes se crean desde la web).
-- ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio está **parado**; si vuelve a arrancar, `localhost:5432` dejaría de ser Docker. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "PostgreSQL 16 … Debian") y `alembic current`.
+- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, `postgres:18` como Neon, `localhost:5432`, BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`. El 10 nov se recreó vacía al pasar de la 16 a la 18. Para dejarla usable: `alembic upgrade head` y `seed.py` (crea los 2 admins). Servicios, horario y clientes se crean desde la web.
+- ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que, si arranca, escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio (`postgresql-x64-18`) está **parado y en Disabled** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio. Como los dos son 18, **la versión ya no sirve para distinguirlos**. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "… on x86_64-pc-linux-gnu"; Windows = "… on x86_64-windows") y `alembic current`.
 - Esa BD de Windows se migró por error a `e5f6a1b2c3d4` el 8 nov (antes estaba en `c70da527d6e9`; solo cambios de esquema, sin pérdida de datos). No se usa.
 - Para pruebas locales, vaciar `TELEGRAM_CHAT_ID` (o poner uno propio) para no avisar a Molina con reservas de prueba.
  

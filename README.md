@@ -85,7 +85,7 @@ Aplicación web de reservas para una peluquería/barbería real con un único pe
 |---|---|
 | Backend | FastAPI · SQLAlchemy 2 · Alembic · Pydantic v2 · PyJWT · bcrypt · slowapi |
 | Frontend | React 19 · Vite · React Router · Axios · CSS Modules |
-| Base de datos | PostgreSQL 16 (Docker en local, gestionada en Render) |
+| Base de datos | PostgreSQL 18 (Docker en local, Neon en producción) |
 | Tests | pytest (SQLite en memoria, sin necesidad de Docker) |
 | Hosting | Render (Frankfurt): Web Service + Static Site + PostgreSQL + Cron Job |
 | DNS / dominio | Cloudflare |
@@ -172,7 +172,7 @@ El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](CLAUDE.m
 docker compose up -d
 ```
 
-Levanta PostgreSQL 16 en `localhost:5432` (usuario `peluqueria`, contraseña `dev_local_2024`, BD `peluqueria`). Puedes conectarte con HeidiSQL o con cualquier otro cliente.
+Levanta PostgreSQL 18 (la misma versión que Neon) en `localhost:5432` (usuario `peluqueria`, contraseña `dev_local_2024`, BD `peluqueria`). Puedes conectarte con HeidiSQL o con cualquier otro cliente.
 
 ### 2. Backend
 
