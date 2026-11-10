@@ -4,7 +4,7 @@
 
 > Runbook de la migración de producción desde Render a **Vercel Hobby** (2 proyectos) + **Neon Free**, todo en **Frankfurt**. Los dominios no cambian: frontend en `rmolinastyle.com` y API en `api.rmolinastyle.com`.
 >
-> **Render no se borra.** `render.yaml`, `seed.py` y `DESPLIEGUE_RENDER.md` siguen en el repo y los servicios de Render se suspenden (no se eliminan) hasta pasado el periodo de rollback. El commit previo a la migración está etiquetado como **`render-v1`**.
+> **Render, después del corte.** Los servicios de Render estuvieron suspendidos como rollback y **se borraron el 10 de noviembre de 2026**. `render.yaml`, `seed.py` y `DESPLIEGUE_RENDER.md` siguen en el repo como forma de despliegue alternativa. El commit previo a la migración está etiquetado como **`render-v1`**.
 
 ---
 
@@ -194,10 +194,10 @@ Hazlo en una franja tranquila (p. ej. por la noche).
 
 ## 9. Rollback
 
-- Los servicios de Render siguen existiendo (suspendidos) y el código previo está en el tag **`render-v1`**.
-- Para volver: reactiva `rm-backend`/`rm-recordatorios` en Render, y en Cloudflare restaura los CNAME de Render.
-- ⚠️ Lo que se haya escrito en Neon después del corte **no está en la BD de Render**: haría falta el dump inverso (Neon directa → Render) antes de reactivar.
-- El código nuevo también funciona en Render (detecta `RENDER=true` para la IP del rate limiting y el cron por CLI sigue igual).
+- **Ya no hay rollback a Render**: sus servicios se borraron el 10 de noviembre de 2026.
+- Ante un despliegue malo en Vercel: *Instant Rollback* al deployment anterior desde el panel del proyecto.
+- Ante una pérdida de datos: restaurar el último `pg_dump` semanal cifrado (`backup-rm.ps1`, ver `ESTADO_PROYECTO.md`) contra la URL directa de Neon. Si el problema es de menos de 6 h, también sirve la restauración de Neon.
+- Volver a Render exigiría montarlo desde cero con `render.yaml` (ver [`DESPLIEGUE_RENDER.md`](DESPLIEGUE_RENDER.md)). El código está preparado para Render: detecta `RENDER=true` para la IP del rate limiting, y el cron por CLI sigue igual. Aun así, no se ha vuelto a probar allí.
 
 ---
 
@@ -205,6 +205,6 @@ Hazlo en una franja tranquila (p. ej. por la noche).
 
 - **Rate limiting en memoria**: en serverless cada instancia lleva su propio contador y se reinicia en los arranques en frío, así que el límite es aproximado. Con el tráfico del piloto suele haber una sola instancia. Solución robusta (futura): almacenamiento compartido (p. ej. Redis).
 - **Vercel Hobby** está pensado para uso personal/no comercial según sus términos; para una peluquería real puede ser necesario el plan Pro.
-- **Neon Free**: la restauración a un punto anterior solo cubre una ventana corta. Haz un `pg_dump` periódico (con la URL directa) y guárdalo cifrado.
+- **Neon Free**: la restauración a un punto anterior solo cubre una ventana corta (6 h). Por eso se hace un `pg_dump` semanal con la URL directa, cifrado y fuera del portátil (`backup-rm.ps1`, fuera del repo; ver `ESTADO_PROYECTO.md`).
 - **Previews de Vercel**: la CSP bloquea la barra de herramientas de Vercel en los deployments de preview (no afecta a producción).
 - **Avisos de Telegram síncronos**: se envían dentro de la petición, tras confirmar la operación, con un timeout de 3 s. Si Telegram falla, la reserva/cancelación/reprogramación se completa igualmente (el fallo solo se registra).

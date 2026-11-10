@@ -12,7 +12,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
  
 - **Dos formas de despliegue** preparadas en el repo, con el mismo código:
   - **Vercel + Neon**: la de producción. Se usa **a petición de Molina, dueño del negocio**, por coste (~0 €). Guía en `DESPLIEGUE_VERCEL.md`.
-  - **Render**: la alternativa. `render.yaml` + `DESPLIEGUE_RENDER.md`; la versión que estuvo en producción está en la rama `render` y en el tag `render-v1`.
+  - **Render**: la alternativa, solo como configuración en el repo (`render.yaml` + `DESPLIEGUE_RENDER.md`). **No hay nada desplegado en Render**: se borró el 10 de noviembre de 2026. Para usarlo habría que montarlo **desde cero** con `render.yaml` (Blueprint nuevo) y llevar los datos desde Neon con `pg_dump`/`pg_restore`. La versión que estuvo en producción está en la rama `render` y en el tag `render-v1`.
 
   Comparación en la sección "Despliegue" del `README.md`. Nunca las dos activas a la vez.
 - **Producción en Vercel Hobby + Neon Free desde el 8 de noviembre de 2026** (corte hecho un domingo, con la peluquería cerrada). Verificado: HTTPS, `www` → apex con 308, login de admin y de cliente, datos migrados, reservar/cancelar, recarga sin 404, cabeceras de seguridad, CSP sin errores, `/health` 200, `/cron/recordatorio` sin cabecera → 401.
@@ -21,8 +21,14 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Pendiente de confirmar**:
   - Que a Molina le llegaron los avisos de Telegram de la reserva y cancelación de prueba del corte. Si no: revisar los logs del backend en Vercel y que `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` sean idénticos a los de Render (sin espacios), y redeploy.
   - Que el resumen diario de la noche del 8 de noviembre (21:00–21:59) le llega → el cron de Vercel funciona.
-- **Render**: `rm-backend` y `rm-recordatorios` suspendidos; `rm-postgres` y `rm-frontend` siguen existiendo como rollback. **Borrar todo hacia el martes o miércoles (10–11 nov)** si va estable, empezando por la Postgres (datos personales, RGPD). Después, comprobar en *Billing* de Render que no queda ninguna suscripción activa.
-- Motivo de la migración: Molina quiere coste ~0 € (Render costaba ~18,50 €/mes). Tras borrar Render, el único coste fijo es el dominio (~10 €/año).
+- **Render borrado el 10 de noviembre de 2026**: `rm-postgres`, `rm-backend`, `rm-recordatorios` y `rm-frontend` eliminados, y el Blueprint desconectado. Ya no hay rollback a Render.
+- **Backups de Neon**:
+  - `pg_dump` **semanal** con un script propio que está **fuera del repo** (`backup-rm.ps1`).
+  - Cada dump se cifra con RAR5 y `-hp`, que cifra también los nombres de los ficheros. La contraseña está en el gestor de contraseñas.
+  - Se guarda una copia fuera del portátil y se conservan los **4 últimos**.
+  - Primer backup: 10 de noviembre de 2026.
+  - Recuerda que la restauración de Neon Free solo cubre las últimas 6 h, así que estos dumps son la copia real.
+- Motivo de la migración: Molina quiere coste ~0 € (Render costaba ~18,50 €/mes). Con Render borrado, el único coste fijo es el dominio (~10 €/año).
 - Molina conoce y **asume** el riesgo de que Vercel Hobby es solo para uso no comercial según sus términos.
 - **Las cuentas de Vercel y Neon son de Cristian** (misma identidad que su GitHub). Si Vercel actuara por el uso comercial en Hobby, afectaría a la cuenta personal de Cristian y a sus otros proyectos.
 ### Infraestructura de producción
@@ -31,14 +37,6 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Vercel backend**: proyecto `aplicacion-web-molina` (raíz `backend/`), dominio `api.rmolinastyle.com` (también responde en `aplicacion-web-molina.vercel.app`). Python 3.14. Variables (solo Production): `DATABASE_URL` (pooled), `DB_NULLPOOL=true`, `SECRET_KEY` (la de Render), `ENVIRONMENT=production`, `ALLOWED_ORIGINS=["https://rmolinastyle.com","https://www.rmolinastyle.com"]` (**array JSON**: el campo es `list[str]` en pydantic-settings), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET`.
 - **Vercel frontend**: proyecto `aplicacion-web-molina-frontend` (raíz `frontend/`), dominios `rmolinastyle.com` (principal) y `www.rmolinastyle.com` (308 al apex). `VITE_API_URL=https://api.rmolinastyle.com`, de tipo **Config** (no sensible: todo lo que lleva `VITE_` acaba en el JS del navegador; nunca poner secretos ahí). `connect-src` de la CSP solo con `https://api.rmolinastyle.com`.
 - **Cloudflare**: los 3 registros (`rmolinastyle.com`, `www`, `api`) apuntan a Vercel, en "DNS only" (nube gris; con proxy naranja el rate limiting de `/login` vería la IP de Cloudflare). Sin registros CAA.
-### Rollback (mientras exista Render)
- 
-1. En Cloudflare, restaurar los CNAME de Render:
-   - `api` → `rm-backend-z7zb.onrender.com`
-   - `rmolinastyle.com` → `rm-frontend-4wr6.onrender.com`
-   - `www` → `rm-frontend-4wr6.onrender.com`
-2. Reanudar `rm-backend` y `rm-recordatorios` en Render; quitar `CRON_SECRET` en Vercel para no duplicar el resumen.
-3. Ojo: lo escrito en Neon después del corte no está en Render. Haría falta el dump inverso (Neon URL directa → Render, imagen `postgres:18`, añadiendo la IP propia en *PostgreSQL Inbound IP Rules* de `rm-postgres`).
 ### Lecciones del corte
  
 - `pg_dump` tiene que ser de versión ≥ que el servidor: con Render en 18, imagen `postgres:18`.
@@ -84,15 +82,13 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 ## Limitaciones conocidas (aceptadas)
  
 - **Vercel Hobby**: uso no comercial según sus términos (riesgo asumido por Molina, en la cuenta personal de Cristian); cron una vez al día con ±59 min de precisión; 1 asiento.
-- **Neon Free**: 0,5 GB, 100 CU-hours/mes (si se agotan, la BD se suspende hasta el mes siguiente), restauración solo de las últimas 6 h → **hacer `pg_dump` manual periódico** (con la URL directa, guardado cifrado; ya no hay backups gestionados como en Render).
+- **Neon Free**: 0,5 GB, 100 CU-hours/mes (si se agotan, la BD se suspende hasta el mes siguiente), restauración solo de las últimas 6 h. Por eso se hace el `pg_dump` semanal cifrado con `backup-rm.ps1` (ver "Situación actual").
 - Arranques en frío: la primera petición tras un rato sin tráfico tarda algo más.
 - Rate limiting "best effort" (contadores en memoria por instancia).
 ---
  
 ## Pendientes menores
  
-- **Borrar Render** (10–11 nov si todo va estable): Postgres primero, luego `rm-backend`, `rm-recordatorios` y `rm-frontend`. Comprobar *Billing*.
-- **Montar el `pg_dump` periódico de Neon** (frecuencia y dónde guardarlo cifrado, por decidir).
 - **Corregir `DESPLIEGUE_VERCEL.md`** en el repo: Render tenía Postgres **18** (no 16) → imagen `postgres:18`; la cuenta de Vercel es la de Cristian; suspender `rm-recordatorios` al principio del corte; `VITE_API_URL` de tipo Config. Convertirlo en documentación de la producción actual más que en runbook de migración.
 - Política de privacidad: mecanismo de transferencia de Vercel (`[…]`), y los nuevos marcadores de la Fase E (justificación de pedir Instagram obligatorio —minimización— y transferencia de Meta). Los rellena Molina o un profesional.
 - Dependencias: FastAPI 0.115.5 / Starlette / slowapi usan `asyncio.iscoroutinefunction`, deprecado en Python 3.14 (~580 warnings en pytest; se elimina en 3.16). Fase aparte de actualización (en Starlette moderno `HTTP_422_UNPROCESSABLE_ENTITY` pasa a ser `HTTP_422_UNPROCESSABLE_CONTENT`).
@@ -151,7 +147,7 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
 - Avisos al peluquero por Telegram. Recordatorios a clientes por WhatsApp, enviados a mano por Molina desde los enlaces del resumen (gratis).
 - Instagram obligatorio para reservar (decisión de Molina). Emails comerciales solo con consentimiento explícito.
 - JavaScript (no TypeScript), axios, JWT en `localStorage`, CSS Modules + variables CSS, sin frameworks de UI.
-- Producción en Vercel Hobby + Neon Free a petición de Molina (coste ~0), asumiendo sus limitaciones. Cuentas de Vercel y Neon a nombre de Cristian. Render se mantiene en el repo como segunda forma de despliegue (`render.yaml` + `DESPLIEGUE_RENDER.md`).
+- Producción en Vercel Hobby + Neon Free a petición de Molina (coste ~0), asumiendo sus limitaciones. Cuentas de Vercel y Neon a nombre de Cristian. Render se mantiene en el repo como segunda forma de despliegue (`render.yaml` + `DESPLIEGUE_RENDER.md`), pero sin nada desplegado: se borró el 10 nov 2026.
 - Dominio principal: apex `rmolinastyle.com`; `www` redirige con 308.
 ## Herramienta de desarrollo — compartir en local
  
@@ -159,8 +155,9 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
 
 ## Base de datos local (desarrollo)
 
-- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, `postgres:18` como Neon, `localhost:5432`, BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`. El 10 nov se recreó vacía al pasar de la 16 a la 18. Para dejarla usable: `alembic upgrade head` y `seed.py` (crea los 2 admins). Servicios, horario y clientes se crean desde la web.
-- ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que, si arranca, escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio (`postgresql-x64-18`) está **parado y en Disabled** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio. Como los dos son 18, **la versión ya no sirve para distinguirlos**. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "… on x86_64-pc-linux-gnu"; Windows = "… on x86_64-windows") y `alembic current`.
+- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, **`postgres:18`, la misma versión que Neon**, `localhost:5432`, BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`.
+- El 10 nov se recreó vacía al pasar de la 16 a la 18 y se migró a `head` (`f6a1b2c3d4e5`). El **admin local** se creó registrándose desde la web y después con `UPDATE usuarios SET rol='admin' WHERE email='…'`. `seed.py` también sirve, pero necesita las variables `ADMIN1_*`/`ADMIN2_*` en `.env`. Servicios, horario y clientes se crean desde la web.
+- ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que, si arranca, escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio (`postgresql-x64-18`) está **parado y deshabilitado (Disabled)** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio. Como los dos son 18, **la versión ya no sirve para distinguirlos**. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "… on x86_64-pc-linux-gnu"; Windows = "… on x86_64-windows") y `alembic current`.
 - Esa BD de Windows se migró por error a `e5f6a1b2c3d4` el 8 nov (antes estaba en `c70da527d6e9`; solo cambios de esquema, sin pérdida de datos). No se usa.
 - Para pruebas locales, vaciar `TELEGRAM_CHAT_ID` (o poner uno propio) para no avisar a Molina con reservas de prueba.
  
@@ -171,5 +168,6 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
 1. Confirmar con Molina los avisos de Telegram del corte y el resumen de la noche del 8 de noviembre (ya con ciudad e Instagram en cada línea).
 2. Verificar en producción la Fase E: reserva de prueba en Alcalá la Real y en Granada (recargando antes la página), ciudad en Mis citas y en la agenda, aviso de Telegram con ciudad e Instagram sin vista previa del enlace; cancelar las citas de prueba.
 3. ~~Retirar el `DEFAULT 'alcala'` de `citas.ubicacion`~~ ✅ en producción el 10 nov 2026 (migración `f6a1b2c3d4e5`).
-4. Hacia el 10–11 de noviembre: borrar los servicios de Render. La configuración (`render.yaml`, `DESPLIEGUE_RENDER.md`) se queda en el repo como forma de despliegue alternativa.
-5. Después: Fase F (mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, `pg_dump` periódico, dependencias).
+4. ~~Borrar Render~~ ✅ 10 nov 2026 (servicios borrados y Blueprint desconectado). La configuración (`render.yaml`, `DESPLIEGUE_RENDER.md`) se queda en el repo como forma de despliegue alternativa.
+5. ~~`pg_dump` periódico de Neon~~ ✅ semanal con `backup-rm.ps1` desde el 10 nov 2026.
+6. Después: Fase F (mover `DIRECCION_ALCALA` al backend) → Fase G. Ir cerrando pendientes menores (`DESPLIEGUE_VERCEL.md`, dependencias).

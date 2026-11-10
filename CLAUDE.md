@@ -14,11 +14,11 @@ App web de gestión de citas para una peluquería/barbería real ("RM — Peluqu
  
 - Backend: FastAPI (Python 3.14). Frontend: React + Vite (JavaScript). BD: PostgreSQL.
 - ORM: SQLAlchemy + Alembic. Validación: Pydantic. Auth: JWT (cabecera `Authorization: Bearer`). Rate limiting: slowapi. Tests: pytest.
-- Entorno local: PostgreSQL en contenedor Docker (docker-compose) + HeidiSQL.
+- Entorno local: **PostgreSQL 18** en contenedor Docker (docker-compose), la misma versión que producción (Neon), + HeidiSQL.
 - **Hosting de producción**: **Vercel Hobby** con dos proyectos: raíz `frontend/` (static Vite) y raíz `backend/` (FastAPI con el runtime de Python de Vercel), región de funciones `fra1`. BD: **Neon Free** (Frankfurt). DNS en Cloudflare ("DNS only"). Tareas programadas con **Vercel Cron**. Detalles en `DESPLIEGUE_VERCEL.md`.
 - **Dos formas de despliegue**:
   - **Vercel**: la de producción, elegida **a petición del dueño del negocio (el peluquero)** por coste.
-  - **Render**: alternativa, con `render.yaml` y `DESPLIEGUE_RENDER.md`. El código detecta la plataforma (`VERCEL=1` / `RENDER=true`).
+  - **Render**: alternativa, con `render.yaml` y `DESPLIEGUE_RENDER.md`. El código detecta la plataforma (`VERCEL=1` / `RENDER=true`). **No hay nada desplegado en Render** (se borró el 10-nov-2026): habría que montarlo desde cero con `render.yaml`.
 
   Nunca las dos activas a la vez. La versión que estuvo desplegada en Render está en la rama `render` y en el tag `render-v1`: **no tocar** esa rama.
 - Sin tiempo real: la disponibilidad se refresca al recargar.

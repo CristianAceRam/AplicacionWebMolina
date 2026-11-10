@@ -323,7 +323,7 @@ El código es el mismo en las dos. Detecta en qué plataforma se ejecuta por las
 - Los secretos con `sync: false` se introducen a mano en el panel de Render **de cada servicio**. El cron necesita sus propios `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`.
 - `render.yaml` solo programa el recordatorio. La purga se lanza a mano (`python scripts/purga_citas.py`) o añadiendo un segundo Cron Job.
 - Si una migración endurece una restricción (`CHECK`, `UNIQUE`…), corrige antes los datos que la incumplan. Si no, el pre-deploy falla.
-- No se ha vuelto a desplegar en Render desde el cambio a Vercel. Si se retoma, hay que probarlo antes y pasar los datos desde Neon con `pg_dump`/`pg_restore`.
+- **No hay nada desplegado en Render**: los servicios se borraron el 10 de noviembre de 2026. Para usarlo habría que montarlo **desde cero** con `render.yaml` (Blueprint nuevo), probarlo y pasar los datos desde Neon con `pg_dump`/`pg_restore`.
 
 > ⚠️ Solo una de las dos debe estar activa a la vez. Con las dos, el peluquero recibiría dos resúmenes cada noche y las reservas quedarían repartidas entre dos bases de datos distintas.
 

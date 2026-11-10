@@ -5,8 +5,8 @@
 > Si se vuelve a desplegar en Render con el código actual de `main`:
 > - Render define `RENDER=true` y el backend toma la IP del cliente como antes. No hacen falta `DB_NULLPOOL` (el servidor es persistente) ni `CRON_SECRET`: los endpoints `/cron/*` se quedan desactivados y el recordatorio lo lanza el Cron Job `rm-recordatorios` con `scripts/recordatorio_diario.py`.
 > - `render.yaml` no programa la purga RGPD. Lánzala a mano (`python scripts/purga_citas.py`) o añade un segundo Cron Job.
-> - Los datos de producción están en Neon. Para llevarlos a Render: `pg_dump` desde la URL directa de Neon y `pg_restore` en `rm-postgres`, con la imagen `postgres:18`. Ver "Rollback" en `ESTADO_PROYECTO.md`.
-> - No se ha vuelto a desplegar en Render desde el cambio: pruébalo antes de mover los dominios.
+> - Los datos de producción están en Neon. Para llevarlos a Render: `pg_dump` desde la URL directa de Neon y `pg_restore` en la nueva `rm-postgres`, con la imagen `postgres:18` (el `pg_dump` tiene que ser de versión ≥ que el servidor). Mientras dure la restauración, añade tu IP en *PostgreSQL Inbound IP Rules*, porque `render.yaml` tiene `ipAllowList: []`.
+> - **No hay nada desplegado en Render**: `rm-postgres`, `rm-backend`, `rm-recordatorios` y `rm-frontend` se borraron el 10 de noviembre de 2026, y el Blueprint se desconectó. Habría que montarlo **desde cero** con `render.yaml` (Blueprint nuevo) y probarlo antes de mover los dominios.
 > - **Nunca las dos plataformas activas a la vez**: habría dos resúmenes cada noche y dos bases de datos con datos distintos.
 >
 > Lo que sigue es el runbook original del primer despliegue en Render.
