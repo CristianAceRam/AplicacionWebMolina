@@ -151,7 +151,9 @@ export default function TabReservar({ servicios, diasAbiertos, fechasCerradas = 
         recargarDisponibilidad()
       } else if (status === 403) {
         setErrorReserva(
-          'No puedes hacer reservas ahora. Contacta con el peluquero para más información.'
+          typeof detail === 'string'
+            ? detail
+            : 'No puedes hacer reservas ahora. Contacta con el peluquero para más información.'
         )
       } else if (status === 422 && errorInstagramDe(detail)) {
         setErrorInstagram(errorInstagramDe(detail))

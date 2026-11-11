@@ -36,7 +36,7 @@ Ambas deben llevar `?sslmode=require` (Neon la incluye; si añade `&channel_bind
 | `DATABASE_URL` | ✅ | URL **pooled** de Neon (host con `-pooler`, `?sslmode=require`). |
 | `DB_NULLPOOL` | ✅ | `true`. Sin conexiones ociosas entre peticiones → Neon escala a cero y no consume CU-hours de más. |
 | `SECRET_KEY` | ✅ | Es la misma que tenía Render (copiada en el corte). Si se cambia, todas las sesiones abiertas caducan y todo el mundo tiene que volver a iniciar sesión. |
-| `ENVIRONMENT` | ✅ | `production` (desactiva `/docs` y `/openapi.json`, activa HSTS). |
+| `ENVIRONMENT` | ✅ | `production` (desactiva `/docs` y `/openapi.json`, activa HSTS). Solo admite `development` o `production`; si no está definida, vale `production`; cualquier otro valor impide arrancar la API. |
 | `ALLOWED_ORIGINS` | ✅ | Array JSON. Definitivo: `["https://rmolinastyle.com","https://www.rmolinastyle.com"]`. Durante las pruebas, añade la URL `.vercel.app` del frontend (ver §6). |
 | `TELEGRAM_BOT_TOKEN` | ✅ | Token del bot de Telegram. |
 | `TELEGRAM_CHAT_ID` | ✅ | Chat del peluquero, que es quien recibe los avisos y el resumen diario. |
@@ -197,6 +197,7 @@ Hazlo en una franja tranquila (p. ej. por la noche).
 - [ ] Recargar en `/admin` y `/mi-cuenta` no da 404.
 - [ ] Consola del navegador sin errores de CSP; "Exportar mis datos" descarga el JSON.
 - [ ] `curl -I` del frontend muestra las cabeceras de seguridad.
+- [ ] `https://api.rmolinastyle.com/docs` devuelve 404.
 - [ ] Crons visibles en Vercel; *Run* del recordatorio llega al peluquero; `/cron/recordatorio` sin cabecera → 401.
 - [ ] `/login`: tras 5 intentos fallidos desde tu IP → 429, y desde otra red sigue funcionando.
 - [ ] En Neon, la compute pasa a *Idle* tras unos minutos sin tráfico.

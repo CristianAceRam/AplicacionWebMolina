@@ -11,7 +11,11 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except ValueError:
+        # > 72 bytes (bcrypt 5) o hash no bcrypt (cuenta anonimizada)
+        return False
 
 
 def create_access_token(user_id: int, rol: str) -> str:

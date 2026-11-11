@@ -70,6 +70,12 @@ def _validar_instagram(v: str) -> str:
 # Auth
 # ---------------------------------------------------------------------------
 
+def _validar_password(v: str) -> str:
+    if len(v.encode()) > 72:
+        raise ValueError("La contraseña no puede superar los 72 bytes")
+    return v
+
+
 class UsuarioCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=100)
@@ -79,6 +85,11 @@ class UsuarioCreate(BaseModel):
     # Sin campo `rol`: el endpoint lo fuerza siempre a 'cliente'
 
     model_config = {"extra": "forbid"}  # 422 ante cualquier campo extra (anti mass-assignment)
+
+    @field_validator("password")
+    @classmethod
+    def validar_password(cls, v: str) -> str:
+        return _validar_password(v)
 
     @field_validator("nombre_completo", mode="before")
     @classmethod
@@ -148,10 +159,15 @@ class ActualizarPerfilIn(BaseModel):
 
 
 class CambiarPasswordIn(BaseModel):
-    password_actual: str
+    password_actual: str = Field(max_length=100)
     password_nueva: str = Field(min_length=8, max_length=100)
 
     model_config = {"extra": "forbid"}
+
+    @field_validator("password_nueva")
+    @classmethod
+    def validar_password(cls, v: str) -> str:
+        return _validar_password(v)
 
 
 class UsuarioAdminRead(BaseModel):
@@ -167,7 +183,7 @@ class UsuarioAdminRead(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=100)
 
 
 class Token(BaseModel):

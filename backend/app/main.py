@@ -6,6 +6,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
@@ -72,6 +73,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # El orden importa: los middlewares se aplican de abajo a arriba
+app.add_middleware(SlowAPIMiddleware)  # aplica default_limits a las rutas sin decorador
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(ProxySchemeMiddleware)
 app.add_middleware(
@@ -131,5 +133,6 @@ if settings.environment != "production":
 # ---------------------------------------------------------------------------
 
 @app.get("/health", tags=["infraestructura"])
+@limiter.exempt
 def health():
     return {"status": "ok"}

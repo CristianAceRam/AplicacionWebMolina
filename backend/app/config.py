@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -9,7 +11,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24 * 7   # 7 días = 10 080 min
     # En .env usa formato JSON: ALLOWED_ORIGINS=["http://localhost:5173"]
     allowed_origins: list[str] = ["http://localhost:5173"]
-    environment: str = "development"
+    environment: Literal["development", "production"] = "production"
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     retencion_meses: int = 24

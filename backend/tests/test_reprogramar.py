@@ -210,6 +210,42 @@ def test_reprogramar_fuera_horario_422(client, db_session, cliente_token, servic
     assert r.status_code == 422
 
 
+def test_reprogramar_2330_fuera_horario_422(client, db_session, cliente_token, servicio_corte):
+    """23:30 + 30 min cruza la medianoche → 422, y la cita queda intacta."""
+    _asegurar_horario(db_session, _BASE)
+    _asegurar_horario(db_session, _DEST)
+
+    cita_id = _crear_cita_api(client, cliente_token, servicio_corte.id, _BASE, "10:00:00")
+
+    r = _reprogramar(client, cliente_token, cita_id, _DEST, "23:30:00")
+    assert r.status_code == 422
+
+    db_session.expire_all()
+    cita = db_session.get(Cita, cita_id)
+    assert cita.fecha == _BASE
+    assert cita.hora_inicio == time(10, 0)
+    assert db_session.query(FranjaOcupada).filter_by(cita_id=cita_id, fecha=_BASE, hora=time(10, 0)).first()
+    assert db_session.query(FranjaOcupada).filter_by(fecha=_DEST).count() == 0
+
+
+def test_reprogramar_rate_limit_429(client, db_session, cliente_token, servicio_corte):
+    """5 reprogramaciones por minuto y usuario: la 6.ª → 429 y no genera aviso."""
+    _asegurar_horario(db_session, _BASE)
+
+    cita_id = _crear_cita_api(client, cliente_token, servicio_corte.id, _BASE, "10:00:00")
+
+    with patch("app.routers.citas.enviar_aviso_peluquero") as mock_tg:
+        for i in range(5):
+            hora = "11:00:00" if i % 2 == 0 else "10:00:00"
+            r = _reprogramar(client, cliente_token, cita_id, _BASE, hora)
+            assert r.status_code == 200, r.text
+
+        r = _reprogramar(client, cliente_token, cita_id, _BASE, "11:00:00")
+
+    assert r.status_code == 429
+    assert mock_tg.call_count == 5
+
+
 def test_reprogramar_otro_usuario_403(client, db_session, cliente_token, servicio_corte):
     """Cliente B intenta reprogramar cita de A → 403."""
     _asegurar_horario(db_session, _BASE)

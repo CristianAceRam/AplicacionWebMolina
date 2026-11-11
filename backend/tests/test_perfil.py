@@ -1,4 +1,5 @@
 """Tests para PATCH /usuarios/me y PATCH /usuarios/me/password."""
+import pytest
 
 
 def _auth(token):
@@ -160,6 +161,29 @@ def test_cambiar_password_sin_token_401(client):
         json={"password_actual": "clientepass123", "password_nueva": "nuevaClave99"},
     )
     assert r.status_code == 401
+
+
+@pytest.mark.parametrize("password_nueva", ["A" * 80, "ñ" * 40])  # más de 72 bytes
+def test_cambiar_password_nueva_mas_de_72_bytes_422(client, cliente_token, password_nueva):
+    r = client.patch(
+        "/usuarios/me/password",
+        json={"password_actual": "clientepass123", "password_nueva": password_nueva},
+        headers=_auth(cliente_token),
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("password_actual, esperado", [
+    ("ñ" * 40, 400),   # 80 bytes: simplemente no coincide
+    ("A" * 101, 422),  # supera max_length
+])
+def test_cambiar_password_actual_larga_no_da_500(client, cliente_token, password_actual, esperado):
+    r = client.patch(
+        "/usuarios/me/password",
+        json={"password_actual": password_actual, "password_nueva": "nuevaClave99"},
+        headers=_auth(cliente_token),
+    )
+    assert r.status_code == esperado
 
 
 # ── Fase E: Instagram en el perfil ────────────────────────────────────────────

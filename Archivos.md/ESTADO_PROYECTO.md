@@ -1,6 +1,6 @@
 # Estado del proyecto — Gestor de Citas Peluquería RM
  
-> Documento de continuidad. Léelo junto a `CLAUDE.md` para retomar el proyecto en cualquier chat nuevo. Última actualización: 10 de noviembre de 2026.
+> Documento de continuidad. Léelo junto a `CLAUDE.md` para retomar el proyecto en cualquier chat nuevo. Última actualización: 11 de noviembre de 2026.
  
 ## Qué es
  
@@ -66,6 +66,18 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 11. Migración a Vercel + Neon: `NullPool`/`prepare_threshold=None`, `/health` sin BD, Telegram síncrono tras el commit (timeout 3 s), crons como endpoints `/cron/recordatorio` y `/cron/purga` con `CRON_SECRET` (la purga se programa por primera vez), IP real desde cabeceras de Vercel para el rate limiting, `tzdata`, `backend/vercel.json` (región `fra1`, 2 crons), Python 3.14.
 12. **Fase E — ciudad de la cita + Instagram obligatorio**: enum `Ubicacion` (`alcala`/`granada`) y `NOMBRES_UBICACION` en `app/constants.py`; `Cita.ubicacion` (NOT NULL + `CHECK`) y `Usuario.instagram` (nullable); validador único de Instagram en `app/schemas.py` (normaliza sin `@` y en minúsculas; 1–30 caracteres, letras/números/`.`/`_`, sin `..` ni `.` al principio o al final) usado por `POST /citas` y `PATCH /usuarios/me`. `POST /citas` exige ciudad y, si el perfil no tiene Instagram, que llegue en el body (422 si no); el Instagram del body se guarda en el perfil **en la misma transacción** que la cita (un 409 no lo guarda). La reprogramación mantiene la ciudad. `PATCH /usuarios/me` permite cambiar el Instagram pero no vaciarlo. Exportación con Instagram y ciudad; anonimizar pone Instagram a NULL. Telegram: ciudad e Instagram (enlace) en avisos y resumen diario, texto plano sin `parse_mode` y con `link_preview_options.is_disabled` en todos los envíos. **260 tests** en verde.
 13. **Retirada del DEFAULT temporal de `citas.ubicacion`** (10 nov 2026): migración `f6a1b2c3d4e5`, con un `downgrade` que lo restaura. El modelo ya no lo tenía. Docker local pasado a `postgres:18`, la misma versión que Neon.
+14. **Tope de citas, horario, límites de peticiones y contraseñas** (11 nov 2026):
+    - **Tope de citas activas futuras por cliente**: `MAX_CITAS_ACTIVAS = 2` en `app/constants.py`. Al llegar al tope, `POST /citas` devuelve 403. El admin está exento. No cuentan las citas canceladas ni las ya pasadas, tampoco las de hoy a una hora anterior.
+    - **Citas que cruzan la medianoche**: `_validar_slot` las rechaza con 422, al crear y al reprogramar, y devuelve la `hora_fin` que usan los dos endpoints.
+    - **Límites de peticiones**:
+      - por usuario en `PATCH /citas/{id}/cancelar` (10/min) y `PATCH /citas/{id}/reprogramar` (5/min y 20/día);
+      - `SlowAPIMiddleware` aplica el límite global (100/min por IP) a las rutas sin límite propio, con `/health` exento.
+    - **Contraseñas limitadas a 72 bytes**:
+      - en el registro y en la contraseña nueva, más de 72 bytes da 422;
+      - `max_length=100` en el login y en la contraseña actual;
+      - `verify_password` devuelve `False` en lugar de lanzar `ValueError`.
+    - **`ENVIRONMENT`**: es un `Literal` (`development` | `production`) con `production` por defecto. Cualquier otro valor impide arrancar la API.
+    - **291 tests** en verde.
 ### Frontend
 - Fase A: cimientos (axios con interceptores 401/409, AuthContext, rutas por rol).
 - Fase B: Login y Registro con estética premium negro/oro, tema claro/oscuro, fuentes self-hosted.
@@ -75,6 +87,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - Favicon RM completo. Monitor de uptime con BetterStack sobre `/health`.
 - Migración: `frontend/vercel.json` (rewrite SPA + cabeceras de seguridad con CSP sin `unsafe-inline`), script del tema en `public/tema-init.js`, política de privacidad con Vercel y Neon.
 - **Fase E**: `src/constants/ubicaciones.js` (ciudades, `DIRECCION_ALCALA = 'C/Camino Nuevo Nº 11'` y texto de Granada) y `src/utils/instagram.js`. Reservar: ciudad → servicio → calendario → horas → Instagram → resumen; los **servicios se ven siempre** (con duración y precio) y se pueden elegir tras escoger ciudad; cambiar de ciudad no borra lo ya elegido; Instagram precargado del perfil con texto de para qué se usa. Ciudad en Mis citas (y dirección si es Alcalá); ciudad e Instagram (enlace `noopener noreferrer`) en la agenda y Clientes; Instagram editable en Mi cuenta. Política de privacidad con Instagram (obligatorio para reservar) y ciudad de la cita.
+- Reservar muestra el mensaje del backend en los 403: cuenta bloqueada o tope de citas activas.
 ---
  
 ## Limitaciones conocidas (aceptadas)
@@ -103,6 +116,7 @@ Se pueden empezar ya en su rama. Todo está decidido con Molina; el detalle téc
 - El mensaje lleva `DIRECCION_ALCALA`, que hoy solo está en el frontend (`src/constants/ubicaciones.js`): **moverla al backend** (p. ej. `app/constants.py` + un endpoint público sin BD que la sirva al frontend) para que siga siendo una sola constante.
 - A tener en cuenta: el resumen llega entre las 21:00 y las 22:59 según la época del año. Si a Molina le parece tarde para escribir a clientes, se adelanta el cron (decisión suya).
 - Con los enlaces `wa.me` el resumen crece: dividirlo si supera los 4096 caracteres de Telegram. La vista previa de enlaces ya está desactivada.
+- Avisar del tope de citas activas al entrar en Reservar (con `GET /citas/mias`), antes de que el cliente recorra todo el flujo.
 ### Fase G — Email "¡Te echamos de menos!" (`feature/email-reactivacion`)
 - Email a clientes con 28 días sin cita, un solo email por periodo de inactividad. Gratis con **Brevo** (300 emails/día, empresa de la UE).
 - Es comunicación comercial: **solo a quien dé su consentimiento** (checkbox aparte y no premarcado en el registro + interruptor en Mi cuenta). Las cuentas existentes no reciben nada hasta que lo activen. Baja en un clic en cada email.

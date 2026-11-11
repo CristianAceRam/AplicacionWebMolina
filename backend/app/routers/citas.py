@@ -1,12 +1,13 @@
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.constants import DIAS_MAX_RESERVA, FRANJA_MINUTOS
+from app.constants import DIAS_MAX_RESERVA, FRANJA_MINUTOS, MAX_CITAS_ACTIVAS
 from app.database import get_db
 from app.dependencies import get_usuario_actual, solo_admin
 from app.models import Cita, EstadoCita, ExcepcionFecha, FranjaOcupada, HorarioPeluquero, Rol, Servicio, TipoExcepcion, Usuario
@@ -35,11 +36,11 @@ def _generar_franjas(fecha: date, hora_inicio, duracion_minutos: int) -> list:
     return franjas
 
 
-def _validar_slot(db, servicio, fecha: date, hora_inicio, today_madrid: date, now_madrid: datetime) -> None:
+def _validar_slot(db, servicio, fecha: date, hora_inicio, today_madrid: date, now_madrid: datetime) -> time:
     """
     Valida ventana de reserva, día cerrado, horario y encaje de la duración.
     NO consulta FranjaOcupada — el solape lo detecta el INSERT + IntegrityError.
-    Lanza HTTPException(422) si alguna condición falla.
+    Lanza HTTPException(422) si alguna condición falla; si no, devuelve la hora de fin.
     """
     if fecha < today_madrid:
         raise HTTPException(
@@ -67,9 +68,14 @@ def _validar_slot(db, servicio, fecha: date, hora_inicio, today_madrid: date, no
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No hay horario definido para ese día de la semana",
         )
-    hora_fin = (
-        datetime.combine(date.min, hora_inicio) + timedelta(minutes=servicio.duracion_minutos)
-    ).time()
+    inicio_dt = datetime.combine(fecha, hora_inicio)
+    fin_dt = inicio_dt + timedelta(minutes=servicio.duracion_minutos)
+    if fin_dt.date() != fecha:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La cita queda fuera del horario de apertura",
+        )
+    hora_fin = fin_dt.time()
     if not any(hora_inicio >= t.hora_apertura and hora_fin <= t.hora_cierre for t in tramos):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -80,6 +86,7 @@ def _validar_slot(db, servicio, fecha: date, hora_inicio, today_madrid: date, no
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="La hora indicada ya ha pasado",
         )
+    return hora_fin
 
 
 def _key_usuario(request: Request) -> str:
@@ -171,6 +178,22 @@ def crear_cita(
             detail="Tu cuenta está bloqueada. Contacta con el peluquero.",
         )
 
+    # 1b-bis. Tope de citas activas futuras por cliente (las de hoy ya pasadas no cuentan)
+    if usuario.rol != Rol.admin:
+        activas = db.query(Cita).filter(
+            Cita.cliente_id == usuario.id,
+            Cita.estado == EstadoCita.activa,
+            or_(
+                Cita.fecha > today_madrid,
+                and_(Cita.fecha == today_madrid, Cita.hora_inicio > now_madrid.time()),
+            ),
+        ).count()
+        if activas >= MAX_CITAS_ACTIVAS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Ya tienes {MAX_CITAS_ACTIVAS} citas activas. Cancela una para reservar otra.",
+            )
+
     # 1c. Instagram obligatorio: el del body (ya validado y normalizado) o el del perfil
     if not (datos.instagram or usuario.instagram):
         raise HTTPException(
@@ -179,12 +202,7 @@ def crear_cita(
         )
 
     # 2–5. Validar ventana, día cerrado, horario y encaje
-    _validar_slot(db, servicio, datos.fecha, datos.hora_inicio, today_madrid, now_madrid)
-
-    hora_fin = (
-        datetime.combine(date.min, datos.hora_inicio)
-        + timedelta(minutes=servicio.duracion_minutos)
-    ).time()
+    hora_fin = _validar_slot(db, servicio, datos.fecha, datos.hora_inicio, today_madrid, now_madrid)
 
     # 6. Transacción atómica: [Instagram en el perfil] + Cita + FranjaOcupada.
     #    Si hay 409, el rollback deshace también el cambio de Instagram (todo o nada).
@@ -249,7 +267,9 @@ def obtener_cita(
 
 
 @router.patch("/citas/{cita_id}/cancelar", response_model=CitaRead)
+@limiter.limit("10/minute", key_func=_key_usuario)
 def cancelar_cita(
+    request: Request,
     cita_id: int,
     usuario: Usuario = Depends(get_usuario_actual),
     db: Session = Depends(get_db),
@@ -310,7 +330,10 @@ def cancelar_cita(
 
 
 @router.patch("/citas/{cita_id}/reprogramar", response_model=CitaRead)
+@limiter.limit("5/minute", key_func=_key_usuario)
+@limiter.limit("20/day", key_func=_key_usuario)
 def reprogramar_cita(
+    request: Request,
     cita_id: int,
     datos: CitaReprogramar,
     usuario: Usuario = Depends(get_usuario_actual),
@@ -364,12 +387,7 @@ def reprogramar_cita(
 
     # 7. Validar el nuevo hueco (ventana, día cerrado, horario, encaje)
     servicio = db.get(Servicio, cita.servicio_id)
-    _validar_slot(db, servicio, datos.fecha, datos.hora_inicio, today_madrid, now_madrid)
-
-    nueva_hora_fin = (
-        datetime.combine(datos.fecha, datos.hora_inicio)
-        + timedelta(minutes=servicio.duracion_minutos)
-    ).time()
+    nueva_hora_fin = _validar_slot(db, servicio, datos.fecha, datos.hora_inicio, today_madrid, now_madrid)
 
     # Guardar datos actuales para el mensaje Telegram
     fecha_ant = cita.fecha

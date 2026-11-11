@@ -1,5 +1,6 @@
-"""Tests de la configuración de BD (URL de Neon, NullPool, prepared statements)."""
+"""Tests de la configuración (URL de Neon, NullPool, prepared statements, ENVIRONMENT)."""
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
@@ -59,3 +60,24 @@ def test_engine_pool_normal_por_defecto():
 
 def test_engine_otro_driver_sin_connect_args():
     assert "connect_args" not in _engine_kwargs("sqlite:///:memory:", nullpool=False)
+
+
+# ── ENVIRONMENT ───────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("valor", ["staging", "Production", "dev", ""])
+def test_environment_invalido_no_arranca(monkeypatch, valor):
+    """Un valor no reconocido impide crear Settings (y por tanto arrancar la API)."""
+    monkeypatch.setenv("ENVIRONMENT", valor)
+    with pytest.raises(ValidationError):
+        _settings(database_url="postgresql://u:p@h/db")
+
+
+@pytest.mark.parametrize("valor", ["development", "production"])
+def test_environment_valido(monkeypatch, valor):
+    monkeypatch.setenv("ENVIRONMENT", valor)
+    assert _settings(database_url="postgresql://u:p@h/db").environment == valor
+
+
+def test_environment_por_defecto_production(monkeypatch):
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    assert _settings(database_url="postgresql://u:p@h/db").environment == "production"

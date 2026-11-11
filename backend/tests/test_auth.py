@@ -1,3 +1,8 @@
+import pytest
+
+from app.models import Rol, Usuario
+from app.security import hash_password, verify_password
+
 _PAYLOAD = {
     "email": "test@example.com",
     "password": "password123",
@@ -222,3 +227,40 @@ def test_registro_consentimiento_guarda_version_y_fecha(client, db_session):
     u = db_session.get(UsuarioModel, r.json()["id"])
     assert u.consentimiento_version == "v1"
     assert u.consentimiento_fecha is not None
+
+
+# ---------------------------------------------------------------------------
+# Contraseñas largas: bcrypt solo admite 72 bytes (no caracteres)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("password", ["A" * 80, "ñ" * 40])  # "ñ" ocupa 2 bytes → 80 bytes
+def test_registro_password_mas_de_72_bytes_422(client, password):
+    r = client.post("/registro", json={**_PAYLOAD, "password": password})
+    assert r.status_code == 422
+
+
+def test_registro_password_72_bytes_ok(client):
+    r = client.post("/registro", json={**_PAYLOAD, "password": "A" * 72})
+    assert r.status_code == 201
+
+
+@pytest.mark.parametrize("email, password, esperado", [
+    ("largo@example.com", "A" * 5000, 422),        # supera max_length
+    ("largo@example.com", "ñ" * 40, 401),          # 80 bytes, usuario existente
+    ("noexiste@example.com", "ñ" * 40, 401),       # 80 bytes, email inexistente
+])
+def test_login_password_larga_no_da_500(client, db_session, email, password, esperado):
+    db_session.add(Usuario(email="largo@example.com", password_hash=hash_password("password123"),
+                           telefono="612345678", nombre_completo="Largo Test", rol=Rol.cliente))
+    db_session.commit()
+
+    r = client.post("/login", json={"email": email, "password": password})
+    assert r.status_code == esperado
+
+
+@pytest.mark.parametrize("plain, hashed", [
+    ("A" * 80, hash_password("password123")),  # más de 72 bytes
+    ("x", "ANONIMIZADO"),                      # hash que no es de bcrypt
+])
+def test_verify_password_no_lanza(plain, hashed):
+    assert verify_password(plain, hashed) is False

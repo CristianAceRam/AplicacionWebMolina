@@ -1,8 +1,11 @@
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from app.constants import DIAS_MAX_RESERVA
-from app.models import Cita, EstadoCita, FranjaOcupada, HorarioPeluquero, Rol, Usuario, Ubicacion
+import pytest
+
+from app.constants import DIAS_MAX_RESERVA, MAX_CITAS_ACTIVAS
+from app.models import Cita, EstadoCita, FranjaOcupada, HorarioPeluquero, Rol, Servicio, Usuario, Ubicacion
 from app.security import create_access_token, hash_password
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -690,3 +693,119 @@ def test_agenda_admin_incluye_ubicacion(client, admin_token, cliente_token, serv
     r = client.get("/citas", params={"fecha": str(fecha_test)}, headers=_auth(admin_token))
     assert r.status_code == 200
     assert r.json()[0]["ubicacion"] == "granada"
+
+
+# ---------------------------------------------------------------------------
+# Tope de citas activas futuras por cliente (MAX_CITAS_ACTIVAS)
+# ---------------------------------------------------------------------------
+
+def _hora(i):
+    """i-ésima franja libre a partir de las 10:00 (10:00, 10:30, 11:00...)."""
+    return time(10 + i // 2, 30 * (i % 2)).strftime("%H:%M:%S")
+
+
+def _cita_db(db, cliente_id, servicio_id, fecha, hora_inicio, estado=EstadoCita.activa):
+    """Inserta una Cita directamente en BD (sin franjas): útil para citas pasadas."""
+    cita = Cita(
+        cliente_id=cliente_id, servicio_id=servicio_id,
+        fecha=fecha, hora_inicio=hora_inicio,
+        hora_fin=(datetime.combine(fecha, hora_inicio) + timedelta(minutes=30)).time(),
+        estado=estado, ubicacion=Ubicacion.alcala,
+    )
+    db.add(cita)
+    db.commit()
+    return cita
+
+
+def test_tope_citas_activas_403(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test):
+    """Con MAX_CITAS_ACTIVAS citas futuras, la siguiente reserva → 403 con mensaje explicativo."""
+    for i in range(MAX_CITAS_ACTIVAS):
+        r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test, _hora(i)), headers=_auth(cliente_token))
+        assert r.status_code == 201, r.text
+
+    r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test, _hora(MAX_CITAS_ACTIVAS)),
+                    headers=_auth(cliente_token))
+    assert r.status_code == 403
+    assert str(MAX_CITAS_ACTIVAS) in r.json()["detail"]
+    assert db_session.query(Cita).count() == MAX_CITAS_ACTIVAS
+
+
+def test_tope_admin_exento(client, admin_token, servicio_corte, horario_dia, fecha_test):
+    """El admin no tiene tope de citas activas."""
+    for i in range(MAX_CITAS_ACTIVAS + 1):
+        body = {**_payload(servicio_corte.id, fecha_test, _hora(i)), "instagram": "admin_test"}
+        r = client.post("/citas", json=body, headers=_auth(admin_token))
+        assert r.status_code == 201, r.text
+
+
+def test_tope_no_cuenta_canceladas(client, cliente_token, servicio_corte, horario_dia, fecha_test):
+    """Cancelar una cita libera cupo para reservar otra."""
+    ids = []
+    for i in range(MAX_CITAS_ACTIVAS):
+        r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test, _hora(i)), headers=_auth(cliente_token))
+        assert r.status_code == 201, r.text
+        ids.append(r.json()["id"])
+
+    assert client.patch(f"/citas/{ids[0]}/cancelar", headers=_auth(cliente_token)).status_code == 200
+
+    r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test, _hora(MAX_CITAS_ACTIVAS)),
+                    headers=_auth(cliente_token))
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.parametrize("dias, hora", [
+    (-1, time(10, 0)),  # ayer
+    (0, time(0, 0)),    # hoy, a una hora que ya ha pasado siempre
+])
+def test_tope_no_cuenta_pasadas(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test, dias, hora):
+    """Las citas activas ya pasadas (también las de hoy) no cuentan para el tope."""
+    usuario = db_session.query(Usuario).filter_by(email="cli@test.com").one()
+    fecha = datetime.now(_MADRID).date() + timedelta(days=dias)
+    for _ in range(MAX_CITAS_ACTIVAS):
+        _cita_db(db_session, usuario.id, servicio_corte.id, fecha, hora)
+
+    r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test), headers=_auth(cliente_token))
+    assert r.status_code == 201, r.text
+
+
+# ---------------------------------------------------------------------------
+# Reservas que cruzarían la medianoche → 422
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("duracion, hora", [(30, "23:30:00"), (300, "22:00:00")])
+def test_reserva_cruza_medianoche_422(client, db_session, cliente_token, horario_dia, fecha_test, duracion, hora):
+    """Horario 09:00-18:00: una cita que acabaría pasada la medianoche está fuera de horario."""
+    s = Servicio(nombre="Servicio", duracion_minutos=duracion, precio=Decimal("10.00"), activo=True)
+    db_session.add(s)
+    db_session.commit()
+    db_session.refresh(s)
+
+    r = client.post("/citas", json=_payload(s.id, fecha_test, hora), headers=_auth(cliente_token))
+    assert r.status_code == 422
+    assert db_session.query(Cita).count() == 0
+    assert db_session.query(FranjaOcupada).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Rate limit de cancelar (10/minuto por usuario)
+# ---------------------------------------------------------------------------
+
+def test_cancelar_rate_limit_429(client, db_session, cliente_token, servicio_corte, horario_dia, fecha_test):
+    r = client.post("/citas", json=_payload(servicio_corte.id, fecha_test), headers=_auth(cliente_token))
+    cita_id = r.json()["id"]
+
+    codigos = [client.patch(f"/citas/{cita_id}/cancelar", headers=_auth(cliente_token)).status_code
+               for _ in range(10)]
+    assert codigos[0] == 200
+    assert set(codigos[1:]) == {409}
+
+    assert client.patch(f"/citas/{cita_id}/cancelar", headers=_auth(cliente_token)).status_code == 429
+
+    # El límite es por usuario: otro cliente no lo comparte.
+    otro = Usuario(email="otro@test.com", password_hash=hash_password("x"), telefono="600000030",
+                   nombre_completo="Otro Cliente", rol=Rol.cliente, instagram="otro_cliente")
+    db_session.add(otro)
+    db_session.commit()
+    db_session.refresh(otro)
+    token_otro = create_access_token(otro.id, otro.rol.value)
+    assert client.patch("/citas/99999/cancelar", headers=_auth(token_otro)).status_code == 404

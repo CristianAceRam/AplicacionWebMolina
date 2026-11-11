@@ -100,3 +100,26 @@ def test_login_local_cabecera_falsificada_no_evita_limite(client):
     for i in range(5):
         assert _login(client, f"203.0.113.{i + 10}").status_code == 401
     assert _login(client, "203.0.113.99").status_code == 429
+
+
+# ── Límite global (default_limits + SlowAPIMiddleware) ────────────────────────
+
+_LIMITE_GLOBAL = 100  # default_limits=["100/minute"] en app/rate_limit.py
+
+
+def test_limite_global_rutas_sin_decorador(client, cliente_token):
+    """Las rutas sin @limiter.limit también tienen límite por IP."""
+    headers = {"Authorization": f"Bearer {cliente_token}"}
+    for _ in range(_LIMITE_GLOBAL):
+        assert client.get("/usuarios/me", headers=headers).status_code == 200
+
+    r = client.get("/usuarios/me", headers=headers)
+    assert r.status_code == 429
+    # El 429 pasa por el resto de middlewares: lleva las cabeceras de seguridad.
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_health_exento_del_limite_global(client):
+    """El monitor de uptime consulta /health a menudo: nunca debe recibir 429."""
+    for _ in range(_LIMITE_GLOBAL + 50):
+        assert client.get("/health").status_code == 200
