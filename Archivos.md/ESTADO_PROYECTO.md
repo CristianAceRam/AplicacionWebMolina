@@ -182,9 +182,15 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
 
 ## Base de datos local (desarrollo)
 
-- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, **`postgres:18`, la misma versión que Neon**, `localhost:5432`, BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`.
+- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, **`postgres:18`, la misma versión que Neon**, **`localhost:5434`** desde el 11 nov (antes 5432), BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`.
 - El 10 nov se recreó vacía al pasar de la 16 a la 18 y se migró a `f6a1b2c3d4e5`; el 11 nov, a `9d2b7e4a1c63` (head). El **admin local** se creó registrándose desde la web y después con `UPDATE usuarios SET rol='admin' WHERE email='…'`. `seed.py` también sirve, pero necesita las variables `ADMIN1_*`/`ADMIN2_*` en `.env`. Servicios, horario y clientes se crean desde la web.
-- ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que, si arranca, escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio (`postgresql-x64-18`) está **parado y deshabilitado (Disabled)** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio. Como los dos son 18, **la versión ya no sirve para distinguirlos**. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "… on x86_64-pc-linux-gnu"; Windows = "… on x86_64-windows") y `alembic current`.
+- ⚠️ En el equipo hay **otros dos Postgres en el 5432**. Por eso el contenedor se publica en el 5434:
+  - **PostgreSQL 18 nativo de Windows**: su servicio (`postgresql-x64-18`) está **parado y deshabilitado (Disabled)** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio.
+  - **Contenedor `db` de otro proyecto, en el Docker nativo de la distro Ubuntu (WSL)**, con `restart=always`. Arranca con WSL (y Docker Desktop arranca Ubuntu). `wslrelay` lo expone en `127.0.0.1:5432`.
+- Antes de migraciones o scripts (alembic, purga, seed), comprobar:
+  - el puerto de la URL (5434);
+  - con `select version()`, a qué servidor se conecta (Docker = "… on x86_64-pc-linux-gnu"; Windows = "… on x86_64-windows"). Como todos son 18, la versión no sirve para distinguirlos;
+  - `alembic current`, contrastado con `docker exec peluqueria-db psql -U peluqueria -d peluqueria -c "select version_num from alembic_version"`.
 - Esa BD de Windows se migró por error a `e5f6a1b2c3d4` el 8 nov (antes estaba en `c70da527d6e9`; solo cambios de esquema, sin pérdida de datos). No se usa.
 - Para pruebas locales, vaciar `TELEGRAM_CHAT_ID` (o poner uno propio) para no avisar a Molina con reservas de prueba.
  

@@ -177,7 +177,7 @@ El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](Archivos
 docker compose up -d
 ```
 
-Levanta PostgreSQL 18 (la misma versión que Neon) en `localhost:5432` (usuario `peluqueria`, contraseña `dev_local_2024`, BD `peluqueria`). Puedes conectarte con HeidiSQL o con cualquier otro cliente.
+Levanta PostgreSQL 18 (la misma versión que Neon) en `localhost:5434` (usuario `peluqueria`, contraseña `dev_local_2024`, BD `peluqueria`). Usa el 5434 y no el 5432 para no chocar con otros Postgres del equipo. Puedes conectarte con HeidiSQL o con cualquier otro cliente.
 
 ### 2. Backend
 
