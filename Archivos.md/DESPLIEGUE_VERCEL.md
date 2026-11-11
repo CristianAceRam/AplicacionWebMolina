@@ -42,7 +42,8 @@ Ambas deben llevar `?sslmode=require` (Neon la incluye; si añade `&channel_bind
 | `TELEGRAM_CHAT_ID` | ✅ | Chat del peluquero, que es quien recibe los avisos y el resumen diario. |
 | `CRON_SECRET` | ✅ | Ver §4. Sin ella los endpoints `/cron/*` responden 404 (desactivados). |
 | `ALGORITHM` | | Por defecto `HS256`. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | | Por defecto `10080` (7 días). |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | | Por defecto `10080` (7 días). Duración del token de los clientes. |
+| `ADMIN_TOKEN_EXPIRE_MINUTES` | | Por defecto `720` (12 h). Duración del token de los admins. |
 | `RETENCION_MESES` | | Por defecto `24` (purga RGPD). |
 | `VERCEL` | — | **La pone Vercel sola** (`1`). El backend la usa para tomar la IP del cliente de las cabeceras del edge de Vercel (rate limiting). No hay que crearla. |
 | `ADMIN1_*`, `ADMIN2_*` | — | **No hacen falta**: no hay seed; los admins llegan con el dump de datos. |
@@ -81,7 +82,7 @@ unset DATABASE_URL
 
 - **Confirma a qué BD apuntas antes de migrar.** El host no debe llevar `-pooler` y `alembic current` debe dar la revisión que esperas. Si no cuadra, para.
 - La variable del shell tiene prioridad sobre tu `backend/.env`, que solo aporta el resto (p. ej. `SECRET_KEY`). Quítala al terminar: si no, cualquier `alembic` o `seed.py` posterior en esa terminal irá contra producción.
-- Head actual: **`f6a1b2c3d4e5`** (aplicada en Neon el 10 de noviembre de 2026).
+- Head actual: **`9d2b7e4a1c63`** (aplicada en Neon el 11 de noviembre de 2026).
 - **Si la migración se aplica antes del merge**, tiene que ser compatible con el código antiguo. Un ejemplo es el `server_default` temporal de la Fase E: rellenaba la columna nueva mientras el código antiguo no la enviaba, y se retiró en una migración posterior.
 - Recordatorio (ver `ESTADO_PROYECTO.md`): si una migración **endurece** una restricción (`CHECK`, `UNIQUE`…), corrige antes los datos que la incumplan.
 - **No hace falta `seed.py`**: los dos admins vienen en los datos migrados desde Render.

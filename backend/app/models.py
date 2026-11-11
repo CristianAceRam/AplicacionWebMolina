@@ -71,6 +71,10 @@ class Usuario(Base):
     # obligatorio para reservar: POST /citas lo exige.
     instagram : Mapped[str | None] = mapped_column(String(INSTAGRAM_MAX_LONGITUD), nullable=True)
 
+    # Versión de sesión: va en el claim "ver" del JWT. Subirla invalida los tokens
+    # emitidos antes (cambio de contraseña, anonimización, cerrar todas las sesiones).
+    token_version : Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
     citas: Mapped[list["Cita"]] = relationship(back_populates="cliente")
 
 

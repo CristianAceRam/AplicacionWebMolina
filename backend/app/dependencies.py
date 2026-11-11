@@ -37,6 +37,13 @@ def get_usuario_actual(
             detail="Usuario no encontrado",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Versión de sesión: los tokens sin "ver" cuentan como versión 0.
+    if payload.get("ver", 0) != usuario.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o caducado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return usuario
 
 

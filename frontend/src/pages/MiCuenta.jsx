@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ui/ThemeToggle'
 import FormularioPerfil from '../components/cuenta/FormularioPerfil'
 import FormularioPassword from '../components/cuenta/FormularioPassword'
+import SeccionSesiones from '../components/cuenta/SeccionSesiones'
 import SeccionPrivacidad from '../components/cuenta/SeccionPrivacidad'
 import styles from './MiCuenta.module.css'
 
@@ -25,6 +26,7 @@ export default function MiCuenta() {
       <main className={styles.contenido}>
         <FormularioPerfil />
         <FormularioPassword />
+        <SeccionSesiones />
         <SeccionPrivacidad />
       </main>
     </div>

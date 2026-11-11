@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta, timezone
+
+import jwt
 import pytest
 
+from app.config import settings
 from app.models import Rol, Usuario
-from app.security import hash_password, verify_password
+from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
 _PAYLOAD = {
     "email": "test@example.com",
@@ -264,3 +268,84 @@ def test_login_password_larga_no_da_500(client, db_session, email, password, esp
 ])
 def test_verify_password_no_lanza(plain, hashed):
     assert verify_password(plain, hashed) is False
+
+
+# ---------------------------------------------------------------------------
+# Versión de sesión (claim "ver") y caducidad por rol
+# ---------------------------------------------------------------------------
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _usuario_bd(db_session, token_version=0, email="sesion@example.com"):
+    u = Usuario(email=email, password_hash=hash_password("password123"), telefono="612345678",
+                nombre_completo="Sesion Test", rol=Rol.cliente, token_version=token_version)
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+    return u
+
+
+def test_token_version_distinta_401(client, db_session):
+    u = _usuario_bd(db_session, token_version=2)
+
+    r = client.get("/usuarios/me", headers=_auth(create_access_token(u.id, "cliente", 1)))
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Token inválido o caducado"
+
+    r = client.get("/usuarios/me", headers=_auth(create_access_token(u.id, "cliente", 2)))
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize("version_bd, esperado", [(0, 200), (1, 401)])
+def test_token_sin_ver(client, db_session, version_bd, esperado):
+    """Un token sin claim "ver" (emitido antes de existir) cuenta como versión 0."""
+    u = _usuario_bd(db_session, token_version=version_bd)
+    token = jwt.encode(
+        {"sub": str(u.id), "rol": "cliente", "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+        settings.secret_key, algorithm=settings.algorithm,
+    )
+    assert client.get("/usuarios/me", headers=_auth(token)).status_code == esperado
+
+
+def test_login_emite_version_actual(client, db_session):
+    _usuario_bd(db_session, token_version=3)
+
+    r = client.post("/login", json={"email": "sesion@example.com", "password": "password123"})
+    assert r.status_code == 200
+    token = r.json()["access_token"]
+    assert decode_access_token(token)["ver"] == 3
+    assert client.get("/usuarios/me", headers=_auth(token)).status_code == 200
+
+
+@pytest.mark.parametrize("rol, segundos", [("admin", 12 * 3600), ("cliente", 7 * 24 * 3600)])
+def test_token_caducidad_por_rol(monkeypatch, rol, segundos):
+    """Con los valores por defecto (sin el .env local): admin 12 h, cliente 7 días (±60 s)."""
+    from app.config import Settings
+    for campo in ("access_token_expire_minutes", "admin_token_expire_minutes"):
+        monkeypatch.setattr(settings, campo, Settings.model_fields[campo].default)
+
+    payload = decode_access_token(create_access_token(999, rol))
+    restante = payload["exp"] - datetime.now(timezone.utc).timestamp()
+    assert abs(restante - segundos) < 60
+
+
+@pytest.mark.parametrize("fixture_token", ["cliente_token", "admin_token"])
+def test_cerrar_sesiones_revoca_token(client, request, fixture_token):
+    token = request.getfixturevalue(fixture_token)
+
+    r = client.post("/usuarios/me/cerrar-sesiones", headers=_auth(token))
+    assert r.status_code == 204
+    assert r.content == b""
+
+    assert client.get("/usuarios/me", headers=_auth(token)).status_code == 401
+
+
+def test_cerrar_sesiones_no_afecta_a_otro_usuario(client, cliente_token, admin_token):
+    assert client.post("/usuarios/me/cerrar-sesiones", headers=_auth(cliente_token)).status_code == 204
+    assert client.get("/usuarios/me", headers=_auth(admin_token)).status_code == 200
+
+
+def test_cerrar_sesiones_sin_token_401(client):
+    assert client.post("/usuarios/me/cerrar-sesiones").status_code == 401

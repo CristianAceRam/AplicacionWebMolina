@@ -61,13 +61,13 @@ Registro de cliente (`POST /registro`, solo crea rol cliente; el rol nunca se ac
 - Checkbox de consentimiento no premarcado (ver "Cumplimiento legal").
 Dependencias de seguridad: `get_usuario_actual`, `solo_admin`.
  
-**Duración de sesión**: el JWT dura **7 días** (configurable, `ACCESS_TOKEN_EXPIRE_MINUTES`). Sin refresh tokens; el JWT no es revocable (asumido). El logout borra el token del `localStorage`. Si en el futuro hay pagos/datos sensibles → access token corto + refresh token.
+**Duración de sesión**: el JWT de cliente dura **7 días** (`ACCESS_TOKEN_EXPIRE_MINUTES`) y el de admin **12 h** (`ADMIN_TOKEN_EXPIRE_MINUTES`). Sin refresh tokens. El token lleva la versión de sesión del usuario (claim `ver` = `usuarios.token_version`) y `get_usuario_actual` devuelve 401 si no coincide con la de la BD. La versión sube, y todos los tokens anteriores dejan de valer, al cambiar la contraseña, al eliminar la cuenta y con "Cerrar sesión en todos los dispositivos" (`POST /usuarios/me/cerrar-sesiones`). Un token sin `ver` cuenta como versión 0. El logout borra el token del `localStorage`. Si en el futuro hay pagos/datos sensibles → access token corto + refresh token.
  
 ---
  
 ## Modelo de datos (basado en FRANJAS de 30 min)
  
-- **Usuario**: `id`, `email` (único), `password_hash`, `telefono`, `nombre_completo`, `rol` ('admin' | 'cliente'), `bloqueado` (bool), `inasistencias` (int, almacenado), `consentimiento_version`, `consentimiento_fecha`, **`instagram`** (str, nullable en BD pero obligatorio para reservar — Fase E, en producción), **`acepta_comunicaciones`** (bool, def. false), **`comunicaciones_fecha`** (timestamp, nullable), **`ultimo_email_reactivacion`** (timestamp, nullable) — los tres últimos NUEVOS, Fase G.
+- **Usuario**: `id`, `email` (único), `password_hash`, `telefono`, `nombre_completo`, `rol` ('admin' | 'cliente'), `bloqueado` (bool), `inasistencias` (int, almacenado), `consentimiento_version`, `consentimiento_fecha`, **`instagram`** (str, nullable en BD pero obligatorio para reservar — Fase E, en producción), **`token_version`** (int, def. 0: versión de sesión que va en el claim `ver` del JWT; subirla invalida los tokens emitidos antes), **`acepta_comunicaciones`** (bool, def. false), **`comunicaciones_fecha`** (timestamp, nullable), **`ultimo_email_reactivacion`** (timestamp, nullable) — los tres últimos NUEVOS, Fase G.
 - **Servicio**: `id`, `nombre`, `duracion_minutos` (**múltiplo de 30, máximo 300 min = 5 h**), `precio`, `activo` (borrado lógico). **Mismos servicios y precios en las dos ciudades.**
 - **HorarioPeluquero**: tramos de apertura por día de la semana (varios tramos/día). Horario recurrente semanal, **único para las dos ciudades**.
 - **Cita**: `id`, `cliente_id`, `servicio_id`, `fecha`, `hora_inicio`, `hora_fin`, `estado` ('activa' | 'cancelada' | 'no_asistida'), **`ubicacion`** ('alcala' | 'granada', obligatoria — Fase E, en producción, ver "Ubicaciones").

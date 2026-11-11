@@ -4,6 +4,7 @@ import bcrypt
 import jwt
 
 from app.config import settings
+from app.models import Rol
 
 
 def hash_password(plain: str) -> str:
@@ -18,11 +19,17 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int, rol: str) -> str:
+def create_access_token(user_id: int, rol: str, version: int = 0) -> str:
+    """JWT con la versión de sesión del usuario ("ver"). Admin: 12 h; cliente: 7 días."""
+    minutos = (
+        settings.admin_token_expire_minutes if rol == Rol.admin
+        else settings.access_token_expire_minutes
+    )
     payload = {
         "sub": str(user_id),
         "rol": rol,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes),
+        "ver": version,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=minutos),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 

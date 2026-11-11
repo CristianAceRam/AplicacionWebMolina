@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     database_url: str
     secret_key: str
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 7   # 7 días = 10 080 min
+    access_token_expire_minutes: int = 60 * 24 * 7   # 7 días = 10 080 min (clientes)
+    admin_token_expire_minutes: int = 12 * 60        # 12 h = 720 min (admins)
     # En .env usa formato JSON: ALLOWED_ORIGINS=["http://localhost:5173"]
     allowed_origins: list[str] = ["http://localhost:5173"]
     environment: Literal["development", "production"] = "production"

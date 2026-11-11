@@ -1,16 +1,19 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import FormField from '../ui/FormField'
 import Button from '../ui/Button'
 import client from '../../api/client'
 import styles from './FormularioPassword.module.css'
 
 export default function FormularioPassword() {
+  const { logout } = useAuth()
+  const navigate   = useNavigate()
   const [passwordActual,  setPasswordActual]  = useState('')
   const [passwordNueva,   setPasswordNueva]   = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [errores,      setErrores]      = useState({})
   const [errorGeneral, setErrorGeneral] = useState('')
-  const [exito,        setExito]        = useState(false)
   const [guardando,    setGuardando]    = useState(false)
   const [mostrarActual, setMostrarActual] = useState(false)
   const [mostrarNueva,  setMostrarNueva]  = useState(false)
@@ -19,7 +22,6 @@ export default function FormularioPassword() {
     e.preventDefault()
     setErrores({})
     setErrorGeneral('')
-    setExito(false)
 
     if (passwordNueva !== passwordConfirm) {
       setErrores({ passwordConfirm: 'Las contraseñas nuevas no coinciden' })
@@ -32,12 +34,12 @@ export default function FormularioPassword() {
         password_actual: passwordActual,
         password_nueva:  passwordNueva,
       })
-      setExito(true)
-      setPasswordActual('')
-      setPasswordNueva('')
-      setPasswordConfirm('')
-      setMostrarActual(false)
-      setMostrarNueva(false)
+      // El cambio de contraseña cierra todas las sesiones, también esta.
+      logout()
+      navigate('/login', {
+        replace: true,
+        state: { mensaje: 'Contraseña cambiada. Inicia sesión con la nueva.' },
+      })
     } catch (err) {
       const status = err.response?.status
       const data   = err.response?.data
@@ -129,9 +131,6 @@ export default function FormularioPassword() {
         />
         {errorGeneral && (
           <p className={styles.msgError} role="alert">{errorGeneral}</p>
-        )}
-        {exito && (
-          <p className={styles.msgExito} role="status">Contraseña cambiada correctamente.</p>
         )}
         <Button type="submit" loading={guardando}>Cambiar contraseña</Button>
       </form>

@@ -180,11 +180,27 @@ def test_admin_no_puede_autoborrarse(client, admin_token):
     assert r.status_code == 403
 
 
-def test_anonimizar_idempotente(client, token_rgpd):
+def test_anonimizar_idempotente(client, db_session, usuario_rgpd, token_rgpd):
     r1 = client.delete("/usuarios/me", headers=_auth(token_rgpd))
     assert r1.status_code == 200
-    r2 = client.delete("/usuarios/me", headers=_auth(token_rgpd))
+    # El token anterior ya no vale: la segunda llamada usa uno con la versión actual.
+    db_session.refresh(usuario_rgpd)
+    token_nuevo = create_access_token(usuario_rgpd.id, usuario_rgpd.rol.value, usuario_rgpd.token_version)
+    r2 = client.delete("/usuarios/me", headers=_auth(token_nuevo))
     assert r2.status_code == 200
+
+
+def test_anonimizar_revoca_token(client, token_rgpd, servicio_corte):
+    """Tras anonimizar, el token que tenía la cuenta deja de valer."""
+    assert client.delete("/usuarios/me", headers=_auth(token_rgpd)).status_code == 200
+
+    assert client.get("/usuarios/me", headers=_auth(token_rgpd)).status_code == 401
+    r = client.patch("/usuarios/me", json={"nombre_completo": "Otro Nombre"}, headers=_auth(token_rgpd))
+    assert r.status_code == 401
+    r = client.post("/citas", headers=_auth(token_rgpd), json={
+        "servicio_id": servicio_corte.id, "fecha": str(date.today() + timedelta(days=2)),
+        "hora_inicio": "10:00:00", "ubicacion": "alcala", "instagram": "otra.cuenta"})
+    assert r.status_code == 401
 
 
 # ---------------------------------------------------------------------------

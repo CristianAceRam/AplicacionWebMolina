@@ -85,7 +85,7 @@ def login(request: Request, datos: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas",
         )
-    return Token(access_token=create_access_token(usuario.id, usuario.rol.value))
+    return Token(access_token=create_access_token(usuario.id, usuario.rol.value, usuario.token_version))
 
 
 @router.get("/usuarios/me/datos", response_model=UsuarioDatosExport)
@@ -167,8 +167,19 @@ def cambiar_password(
             detail="La contraseña actual no es correcta",
         )
     usuario.password_hash = hash_password(datos.password_nueva)
+    usuario.token_version += 1  # cierra todas las sesiones, incluida la actual
     db.commit()
     return {"detail": "Contraseña actualizada correctamente"}
+
+
+@router.post("/usuarios/me/cerrar-sesiones", status_code=status.HTTP_204_NO_CONTENT)
+def cerrar_sesiones(
+    usuario: Usuario = Depends(get_usuario_actual),
+    db: Session = Depends(get_db),
+):
+    """Cierra la sesión en todos los dispositivos (incluido este): invalida todos los tokens emitidos."""
+    usuario.token_version += 1
+    db.commit()
 
 
 @router.delete("/usuarios/me", status_code=200)
@@ -191,6 +202,7 @@ def eliminar_mi_cuenta(
     usuario.telefono        = "000000000"
     usuario.instagram       = None
     usuario.password_hash   = HASH_ANONIMIZADO
+    usuario.token_version  += 1  # invalida todas las sesiones de la cuenta
 
     db.commit()
     return {"detail": "Tu cuenta ha sido anonimizada y tus datos personales eliminados."}

@@ -31,7 +31,7 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - **Las cuentas de Vercel y Neon son de Cristian** (misma identidad que su GitHub). Si Vercel actuara por el uso comercial en Hobby, afectaría a la cuenta personal de Cristian y a sus otros proyectos.
 ### Infraestructura de producción
  
-- **Neon**: proyecto `rm-production`, AWS Europe Central 1 (Frankfurt), **Postgres 18** (misma versión que tenía Render). Ojo con los nombres: el **proyecto** se llama `rm-production`, pero la **base de datos** dentro de él es `rm_postgres` (rol `rm_postgres_owner`); es la misma BD de producción. URLs pooled y directa en el gestor de contraseñas. Alembic en **`f6a1b2c3d4e5 (head)`** (10 nov 2026). `citas.ubicacion` es NOT NULL y ya **sin DEFAULT**.
+- **Neon**: proyecto `rm-production`, AWS Europe Central 1 (Frankfurt), **Postgres 18** (misma versión que tenía Render). Ojo con los nombres: el **proyecto** se llama `rm-production`, pero la **base de datos** dentro de él es `rm_postgres` (rol `rm_postgres_owner`); es la misma BD de producción. URLs pooled y directa en el gestor de contraseñas. Alembic en **`9d2b7e4a1c63 (head)`** (11 nov 2026). `citas.ubicacion` es NOT NULL y ya **sin DEFAULT**.
 - **Vercel backend**: proyecto `aplicacion-web-molina` (raíz `backend/`), dominio `api.rmolinastyle.com` (también responde en `aplicacion-web-molina.vercel.app`). Python 3.14. Variables (solo Production): `DATABASE_URL` (pooled), `DB_NULLPOOL=true`, `SECRET_KEY` (la de Render), `ENVIRONMENT=production`, `ALLOWED_ORIGINS=["https://rmolinastyle.com","https://www.rmolinastyle.com"]` (**array JSON**: el campo es `list[str]` en pydantic-settings), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET`.
 - **Vercel frontend**: proyecto `aplicacion-web-molina-frontend` (raíz `frontend/`), dominios `rmolinastyle.com` (principal) y `www.rmolinastyle.com` (308 al apex). `VITE_API_URL=https://api.rmolinastyle.com`, de tipo **Config** (no sensible: todo lo que lleva `VITE_` acaba en el JS del navegador; nunca poner secretos ahí). `connect-src` de la CSP solo con `https://api.rmolinastyle.com`.
 - **Cloudflare**: los 3 registros (`rmolinastyle.com`, `www`, `api`) apuntan a Vercel, en "DNS only" (nube gris; con proxy naranja el rate limiting de `/login` vería la IP de Cloudflare). Sin registros CAA.
@@ -78,6 +78,15 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
       - `verify_password` devuelve `False` en lugar de lanzar `ValueError`.
     - **`ENVIRONMENT`**: es un `Literal` (`development` | `production`) con `production` por defecto. Cualquier otro valor impide arrancar la API.
     - **291 tests** en verde.
+15. **Sesiones revocables y sesión de admin de 12 h** (11 nov 2026):
+    - **`usuarios.token_version`** (INTEGER NOT NULL, DEFAULT 0): migración `9d2b7e4a1c63`, aplicada en Neon el 11 nov 2026. Pone los admins a 1, así que sus tokens anteriores dejaron de valer al desplegar.
+    - **El JWT lleva la versión** en el claim `ver`. `get_usuario_actual` devuelve 401 si no coincide con la de la BD. Un token sin `ver` cuenta como versión 0.
+    - **La versión sube**:
+      - al cambiar la contraseña (cierra todas las sesiones, incluida la actual);
+      - al anonimizar la cuenta;
+      - con `POST /usuarios/me/cerrar-sesiones` (204, para cliente y admin).
+    - **Caducidad**: admin 12 h (`ADMIN_TOKEN_EXPIRE_MINUTES`, por defecto 720) y cliente 7 días (`ACCESS_TOKEN_EXPIRE_MINUTES`).
+    - **303 tests** en verde.
 ### Frontend
 - Fase A: cimientos (axios con interceptores 401/409, AuthContext, rutas por rol).
 - Fase B: Login y Registro con estética premium negro/oro, tema claro/oscuro, fuentes self-hosted.
@@ -88,6 +97,9 @@ App web de gestión de citas para una peluquería/barbería real (RM, de Molina)
 - Migración: `frontend/vercel.json` (rewrite SPA + cabeceras de seguridad con CSP sin `unsafe-inline`), script del tema en `public/tema-init.js`, política de privacidad con Vercel y Neon.
 - **Fase E**: `src/constants/ubicaciones.js` (ciudades, `DIRECCION_ALCALA = 'C/Camino Nuevo Nº 11'` y texto de Granada) y `src/utils/instagram.js`. Reservar: ciudad → servicio → calendario → horas → Instagram → resumen; los **servicios se ven siempre** (con duración y precio) y se pueden elegir tras escoger ciudad; cambiar de ciudad no borra lo ya elegido; Instagram precargado del perfil con texto de para qué se usa. Ciudad en Mis citas (y dirección si es Alcalá); ciudad e Instagram (enlace `noopener noreferrer`) en la agenda y Clientes; Instagram editable en Mi cuenta. Política de privacidad con Instagram (obligatorio para reservar) y ciudad de la cita.
 - Reservar muestra el mensaje del backend en los 403: cuenta bloqueada o tope de citas activas.
+- Mi cuenta:
+  - al cambiar la contraseña se cierra la sesión y se vuelve a `/login` con un aviso;
+  - sección "Sesiones" con el botón "Cerrar sesión en todos los dispositivos": pide confirmación con un modal y lleva a `/login` con un aviso.
 ---
  
 ## Limitaciones conocidas (aceptadas)
@@ -137,8 +149,10 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
 - `GET /usuarios/me` → `{ id, email, telefono, nombre_completo, rol, instagram }` (`instagram`: `string | null`). Mismo esquema en la respuesta de `PATCH /usuarios/me` y `POST /registro`.
 - `PATCH /usuarios/me` → body con al menos uno de `nombre_completo`, `telefono`, `instagram` (`instagram: null` → 422: se cambia, no se vacía). Cualquier otro campo → 422.
 - `GET /usuarios`, `GET /usuarios/{id}`, `PATCH /usuarios/{id}/bloquear|desbloquear` (admin) → incluyen `instagram`.
-- `GET /usuarios/me/datos` → `perfil.instagram` y `citas[].ubicacion`. `DELETE /usuarios/me` pone `instagram` a NULL.
-- JWT claims: `sub`, `rol`, `exp`. El frontend no decodifica el JWT.
+- `GET /usuarios/me/datos` → `perfil.instagram` y `citas[].ubicacion`. `DELETE /usuarios/me` pone `instagram` a NULL y cierra todas las sesiones de la cuenta.
+- `PATCH /usuarios/me/password` → 200 `{detail}`. Cierra todas las sesiones, incluida la actual: el token con el que se llama deja de valer y el frontend hace logout.
+- `POST /usuarios/me/cerrar-sesiones` → 204, sin cuerpo (cliente y admin). Todos los tokens del usuario, incluido el actual, dejan de valer.
+- JWT claims: `sub`, `rol`, `ver`, `exp`. El frontend no decodifica el JWT.
 - `POST /registro` → 201 + UsuarioRead (sin token). Email duplicado → 409. Password mínimo 8.
 **Citas/servicios:**
 - `GET /servicios` → solo activos; `precio` como string decimal ("25.50"). `?incluir_inactivos=true` solo admin. Requiere token.
@@ -169,7 +183,7 @@ Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudf
 ## Base de datos local (desarrollo)
 
 - La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, **`postgres:18`, la misma versión que Neon**, `localhost:5432`, BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`.
-- El 10 nov se recreó vacía al pasar de la 16 a la 18 y se migró a `head` (`f6a1b2c3d4e5`). El **admin local** se creó registrándose desde la web y después con `UPDATE usuarios SET rol='admin' WHERE email='…'`. `seed.py` también sirve, pero necesita las variables `ADMIN1_*`/`ADMIN2_*` en `.env`. Servicios, horario y clientes se crean desde la web.
+- El 10 nov se recreó vacía al pasar de la 16 a la 18 y se migró a `f6a1b2c3d4e5`; el 11 nov, a `9d2b7e4a1c63` (head). El **admin local** se creó registrándose desde la web y después con `UPDATE usuarios SET rol='admin' WHERE email='…'`. `seed.py` también sirve, pero necesita las variables `ADMIN1_*`/`ADMIN2_*` en `.env`. Servicios, horario y clientes se crean desde la web.
 - ⚠️ En el equipo hay también un **PostgreSQL 18 nativo de Windows** que, si arranca, escucha en el **mismo puerto 5432** y tapa al contenedor. Su servicio (`postgresql-x64-18`) está **parado y deshabilitado (Disabled)** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio. Como los dos son 18, **la versión ya no sirve para distinguirlos**. Antes de migraciones o scripts (alembic, purga, seed), comprobar con `select version()` a qué servidor se conecta (Docker = "… on x86_64-pc-linux-gnu"; Windows = "… on x86_64-windows") y `alembic current`.
 - Esa BD de Windows se migró por error a `e5f6a1b2c3d4` el 8 nov (antes estaba en `c70da527d6e9`; solo cambios de esquema, sin pérdida de datos). No se usa.
 - Para pruebas locales, vaciar `TELEGRAM_CHAT_ID` (o poner uno propio) para no avisar a Molina con reservas de prueba.

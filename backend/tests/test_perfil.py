@@ -155,6 +155,24 @@ def test_cambiar_password_campo_extra_rechazado(client, cliente_token):
     assert r.status_code == 422
 
 
+def test_cambiar_password_revoca_sesiones(client, cliente_token):
+    """Cambiar la contraseña cierra todas las sesiones, incluida la actual."""
+    r = client.patch(
+        "/usuarios/me/password",
+        json={"password_actual": "clientepass123", "password_nueva": "nuevaClave99"},
+        headers=_auth(cliente_token),
+    )
+    assert r.status_code == 200
+    assert r.json() == {"detail": "Contraseña actualizada correctamente"}
+
+    assert client.get("/usuarios/me", headers=_auth(cliente_token)).status_code == 401
+
+    r = client.post("/login", json={"email": "cli@test.com", "password": "nuevaClave99"})
+    assert r.status_code == 200
+    nuevo = r.json()["access_token"]
+    assert client.get("/usuarios/me", headers=_auth(nuevo)).status_code == 200
+
+
 def test_cambiar_password_sin_token_401(client):
     r = client.patch(
         "/usuarios/me/password",
