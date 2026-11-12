@@ -18,3 +18,4 @@ tzdata==2026.3
 
 # Testing
 pytest==8.3.5
+certifi>=2026.10.19
