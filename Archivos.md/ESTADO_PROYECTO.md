@@ -178,11 +178,12 @@ Reservar sin cuenta, con limitaciones: sin historial, sin recordatorios y sin em
 - Documentos del proyecto de Claude (chat) actualizados a mano: al cerrar cada fase se suben las versiones del repo.
 ## Herramienta de desarrollo — compartir en local
  
-Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudflared tunnel --url http://localhost:5173` (si da errores QUIC: `--protocol http2` o desactivar la VPN). Solo para demos cortas; parar el túnel al terminar.
+Vite escucha solo en `127.0.0.1:5173` (`server.host` en `vite.config.js`), no en la red local. Túnel de Cloudflare con el proxy de Vite (`/api` → `localhost:8000`): `cloudflared tunnel --url http://127.0.0.1:5173` (si da errores QUIC: `--protocol http2` o desactivar la VPN). Solo para demos cortas; parar el túnel al terminar.
 
 ## Base de datos local (desarrollo)
 
-- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, **`postgres:18`, la misma versión que Neon**, **`localhost:5434`** desde el 11 nov (antes 5432), BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`.
+- La BD de desarrollo es **solo la de Docker** (`peluqueria-db`, **`postgres:18`, la misma versión que Neon**, puerto **5434** desde el 11 nov (antes 5432), BD `peluqueria`). El volumen se monta en `/var/lib/postgresql`, porque la imagen 18 ya no usa `/var/lib/postgresql/data`.
+- Desde el 13 nov el puerto se publica solo en **`127.0.0.1:5434`** (no en la red). La `DATABASE_URL` local usa `127.0.0.1` y no `localhost`: en Windows `localhost` resuelve primero a `::1`, donde no escucha nada, y psycopg se queda esperando (sin `connect_timeout`, indefinidamente). Lo mismo para HeidiSQL.
 - El 10 nov se recreó vacía al pasar de la 16 a la 18 y se migró a `f6a1b2c3d4e5`; el 11 nov, a `9d2b7e4a1c63` (head). El **admin local** se creó registrándose desde la web y después con `UPDATE usuarios SET rol='admin' WHERE email='…'`. `seed.py` también sirve, pero necesita las variables `ADMIN1_*`/`ADMIN2_*` en `.env`. Servicios, horario y clientes se crean desde la web.
 - ⚠️ En el equipo hay **otros dos Postgres en el 5432**. Por eso el contenedor se publica en el 5434:
   - **PostgreSQL 18 nativo de Windows**: su servicio (`postgresql-x64-18`) está **parado y deshabilitado (Disabled)** desde el 10 nov; antes estaba en Automatic y volvía a arrancar tras cada reinicio.

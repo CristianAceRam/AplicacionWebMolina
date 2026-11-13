@@ -5,7 +5,7 @@ SPA en React + Vite del gestor de citas.
 ```bash
 npm install
 cp .env.example .env   # VITE_API_URL=/api (proxy de Vite → http://localhost:8000)
-npm run dev            # http://localhost:5173
+npm run dev            # http://127.0.0.1:5173
 npm run build          # genera dist/
 npm run lint
 ```

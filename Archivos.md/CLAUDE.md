@@ -267,4 +267,4 @@ Paleta:
 - Fases pequeñas y verificables. Tests pytest por endpoint. Nunca secretos en el código. Si algo no está claro, pregunta antes de inventar.
 - Trabaja en la rama `feature/*` que se indique; nunca en `render`.
 - Si hay migración Alembic, recuerda que en producción se aplica a mano contra Neon (URL directa) antes de desplegar el código que la usa.
-- Antes de ejecutar migraciones o scripts contra una BD (alembic, purga, seed), muestra host, puerto, nombre de la BD y `alembic current`, y espera confirmación. El contenedor local está en `localhost:5434`. Nunca asumas que un Postgres en `localhost` es el de Docker: en el 5432 hay otros.
+- Antes de ejecutar migraciones o scripts contra una BD (alembic, purga, seed), muestra host, puerto, nombre de la BD y `alembic current`, y espera confirmación. El contenedor local se publica solo en `127.0.0.1:5434` (no en la red); la `DATABASE_URL` local usa `127.0.0.1` y no `localhost`, porque en Windows `localhost` resuelve primero a `::1`, donde no escucha nada, y la conexión se queda esperando. Nunca asumas que un Postgres en `localhost` es el de Docker: en el 5432 hay otros.

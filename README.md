@@ -177,7 +177,7 @@ El detalle completo de las decisiones de diseño está en [`CLAUDE.md`](Archivos
 docker compose up -d
 ```
 
-Levanta PostgreSQL 18 (la misma versión que Neon) en `localhost:5434` (usuario `peluqueria`, contraseña `dev_local_2024`, BD `peluqueria`). Usa el 5434 y no el 5432 para no chocar con otros Postgres del equipo. Puedes conectarte con HeidiSQL o con cualquier otro cliente.
+Levanta PostgreSQL 18 (la misma versión que Neon) en `127.0.0.1:5434` (usuario `peluqueria`, contraseña `dev_local_2024`, BD `peluqueria`), accesible solo desde el propio equipo. Usa el 5434 y no el 5432 para no chocar con otros Postgres del equipo. Conéctate a `127.0.0.1` y no a `localhost`: en Windows `localhost` resuelve primero a `::1`, donde no escucha el contenedor, y la conexión se queda esperando. Puedes conectarte con HeidiSQL o con cualquier otro cliente.
 
 ### 2. Backend
 
@@ -211,7 +211,7 @@ cp .env.example .env           # VITE_API_URL=/api
 npm run dev
 ```
 
-La app queda en `http://localhost:5173`. En desarrollo, Vite redirige `/api/*` a `http://localhost:8000` (ver [`vite.config.js`](frontend/vite.config.js)), así que no hace falta configurar CORS.
+La app queda en `http://127.0.0.1:5173` (Vite solo escucha en el propio equipo). En desarrollo, Vite redirige `/api/*` a `http://localhost:8000` (ver [`vite.config.js`](frontend/vite.config.js)), así que no hace falta configurar CORS.
 
 > Para enseñar una demo desde el entorno local a través de un túnel de Cloudflare, sigue [`TUNEL_LOCAL.md`](TUNEL_LOCAL.md).
 

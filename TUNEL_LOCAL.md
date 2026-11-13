@@ -36,13 +36,14 @@ venv\Scripts\uvicorn app.main:app --reload
 ```
 npm run dev
 ```
-Vite mostrará `Local: http://localhost:5173` y también la IP de red. Todas las
+Vite mostrará `Local: http://127.0.0.1:5173`. Solo escucha en el propio equipo,
+no en la red local; el túnel se conecta desde este mismo equipo. Todas las
 llamadas axios van a `/api/...` y el proxy de Vite las reenvía al backend en
 `http://localhost:8000`.
 
 **Terminal 3 — Túnel** (desde cualquier directorio)
 ```
-cloudflared tunnel --url http://localhost:5173
+cloudflared tunnel --url http://127.0.0.1:5173
 ```
 Espera hasta ver una línea como:
 ```
